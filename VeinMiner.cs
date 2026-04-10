@@ -11,7 +11,7 @@ namespace UltimateVisualPlugin
     {
         public override string Name => "Godly Armor & Accessory Effects";
         public override string Author => "Gemini";
-        public override Version Version => new Version(1, 1, 0);
+        public override Version Version => new Version(1, 1, 1);
 
         private int timer = 0;
 
@@ -38,46 +38,19 @@ namespace UltimateVisualPlugin
                 int armProj = -1;
                 int armDmg = 10;
 
-                if (headID == 79 || headID == 80 || headID == 81) { armProj = 157; armDmg = 12; } // Iron/Lead
-                else if (headID == 231 || headID == 2763) { armProj = 15; armDmg = 40; } // Fire
-                else if (headID >= 2851 && headID <= 2862) { armProj = 614; armDmg = 70; } // Endgame
+                // Logika Armor (Sama seperti sebelumnya)
+                if (headID == 79 || headID == 80 || headID == 81) { armProj = 157; armDmg = 12; }
+                else if (headID == 231 || headID == 2763) { armProj = 15; armDmg = 40; }
+                else if (headID >= 2851 && headID <= 2862) { armProj = 614; armDmg = 70; }
 
                 if (armProj != -1 && timer % 60 == 0)
                 {
                     int pID = Projectile.NewProjectile(null, p.Center, Vector2.Zero, armProj, armDmg, 5f, tsPlayer.Index);
-                    Main.projectile[pID].timeLeft = 40;
-                    NetMessage.SendData((int)PacketTypes.ProjectileNew, -1, -1, null, pID);
-                }
-
-                // --- BAGIAN 2: AKSESORIS (DAMAGE KECIL / VISUAL) ---
-                for (int i = 3; i <= 8; i++)
-                {
-                    Item acc = p.armor[i];
-                    if (acc == null || acc.type == 0) continue;
-
-                    // Efek Sayap (Wing Trail) - Damage 5
-                    if (acc.wingTimeMax > 0 && p.velocity.Y != 0 && timer % 30 == 0)
+                    if (pID < 1000)
                     {
-                        int wID = Projectile.NewProjectile(null, p.Bottom, Vector2.Zero, 502, 5, 0f, tsPlayer.Index);
-                        Main.projectile[wID].timeLeft = 20;
-                        NetMessage.SendData((int)PacketTypes.ProjectileNew, -1, -1, null, wID);
-                    }
-
-                    // Efek Sepatu (Speed Trail) - Damage 8
-                    if ((acc.type == 54 || acc.type == 1862) && Math.Abs(p.velocity.X) > 8)
-                    {
-                        int sID = Projectile.NewProjectile(null, p.Bottom, Vector2.Zero, 612, 8, 0f, tsPlayer.Index);
-                        Main.projectile[sID].timeLeft = 15;
-                        NetMessage.SendData((int)PacketTypes.ProjectileNew, -1, -1, null, sID);
+                        Main.projectile[pID].timeLeft = 40;
+                        NetMessage.SendData((int)PacketTypes.ProjectileNew, -1, -1, null, pID);
                     }
                 }
-            }
-        }
 
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing) ServerApi.Hooks.GameUpdate.Deregister(this, OnUpdate);
-            base.Dispose(disposing);
-        }
-    }
-}
+                //
