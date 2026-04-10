@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using Terraria;
 using TerrariaApi.Server;
 using TShockAPI;
@@ -25,17 +24,16 @@ namespace MeleeRework
         {
             if (args.MsgID != PacketTypes.PlayerUpdate) return;
 
-            TSPlayer tsPlayer = TShock.Players[args.Player.whoAmI];
-            if (tsPlayer == null || !tsPlayer.Active || tsPlayer.SelectedItem == null) return;
+            // PERBAIKAN: Cara ambil player di TShock 6.1
+            TSPlayer tsPlayer = TShock.Players[args.Msg.whoAmI];
+            if (tsPlayer == null || !tsPlayer.Active || tsPlayer.TPlayer == null) return;
 
             Player p = tsPlayer.TPlayer;
-            Item item = tsPlayer.SelectedItem;
+            Item item = p.inventory[p.selectedItem];
 
-            // DETEKSI SEMUA MELEE: Pedang, Tombak, Yoyo, Flail, dll.
-            // Kita kecualikan alat kerja (Pickaxe/Axe) biar gak ganggu pas nambang.
-            if (item.damage > 0 && item.countsAsClass(DamageClass.Melee) && item.pick == 0 && item.axe == 0)
+            // PERBAIKAN: Cek Melee secara manual (paling aman buat build)
+            if (item != null && item.damage > 0 && item.melee && item.pick == 0 && item.axe == 0)
             {
-                // Cek saat animasi ayunan dimulai
                 if (p.itemAnimation == p.itemAnimationMax - 1 && p.itemAnimation > 0)
                 {
                     ApplyMeleeGodEffects(tsPlayer, item);
@@ -47,24 +45,22 @@ namespace MeleeRework
         {
             Vector2 pos = tsPlayer.TPlayer.Center;
             
-            // Hitung arah mouse player
+            // PERBAIKAN: Arah serangan berdasarkan arah hadap player (karena LastNetConfig error)
             float speed = 14f;
-            float angle = (float)Math.Atan2(tsPlayer.LastNetConfig.Y - pos.Y, tsPlayer.LastNetConfig.X - pos.X);
-            Vector2 velocity = new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle)) * speed;
+            Vector2 velocity = new Vector2(tsPlayer.TPlayer.direction * speed, 0f); 
+            
+            // Jika player mengayun ke atas/bawah sedikit
+            if (tsPlayer.TPlayer.gravDir == -1f) velocity.Y = -speed;
 
-            // 1. PROYEKTIL UTAMA: Blue Flare (ID: 729 - Efeknya keren banget)
+            // 1. Proyektil Blue Flare (ID: 729)
             int p1 = Projectile.NewProjectile(null, pos, velocity, 729, item.damage * 2, 6f, tsPlayer.Index);
             
-            // 2. PROYEKTIL TAMBAHAN: Solar Flare (ID: 608 - Efek api berputar)
-            // Biar mepet sama player, buat efek tebasan area
-            int p2 = Projectile.NewProjectile(null, pos, velocity * 0.5f, 608, item.damage, 4f, tsPlayer.Index);
+            // 2. Proyektil Solar Flare (ID: 608) untuk efek "Spark" di badan
+            int p2 = Projectile.NewProjectile(null, pos, Vector2.Zero, 608, item.damage, 4f, tsPlayer.Index);
 
-            // Kirim data ke semua player biar visualnya muncul
+            // Kirim data ke semua player
             NetMessage.SendData((int)PacketTypes.ProjectileNew, -1, -1, null, p1);
             NetMessage.SendData((int)PacketTypes.ProjectileNew, -1, -1, null, p2);
-            
-            // Efek suara biar kerasa berat
-            tsPlayer.SendData(PacketTypes.PlaySound, "", 2, pos.X, pos.Y, 71); 
         }
 
         protected override void Dispose(bool disposing)
