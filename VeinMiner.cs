@@ -1,22 +1,19 @@
 using System;
-using System.IO;
 using Terraria;
 using TerrariaApi.Server;
 using TShockAPI;
 using Microsoft.Xna.Framework;
 
-namespace NaturalChestOnlyFixed
+namespace RangedVarietyPlugin
 {
     [ApiVersion(2, 1)]
-    public class RandomLootPlugin : TerrariaPlugin
+    public class RangedPlugin : TerrariaPlugin
     {
-        public override string Name => "Natural Self-Destruct Chest Fixed";
+        public override string Name => "Ultimate Ranged Variety";
         public override string Author => "Player";
-        public override Version Version => new Version(1, 3, 3);
+        public override Version Version => new Version(2, 1, 0);
 
-        private int[] lootPool = { 29, 21, 19, 706, 31, 2353, 290, 292, 499, 1225 };
-
-        public RandomLootPlugin(Main game) : base(game) { }
+        public RangedPlugin(Main game) : base(game) { }
 
         public override void Initialize()
         {
@@ -25,54 +22,58 @@ namespace NaturalChestOnlyFixed
 
         private void OnGetData(GetDataEventArgs args)
         {
-            if (args.MsgID != PacketTypes.ChestOpen) return;
+            if (args.MsgID != PacketTypes.PlayerUpdate) return;
 
             TSPlayer tsPlayer = TShock.Players[args.Msg.whoAmI];
-            if (tsPlayer == null || !tsPlayer.Active) return;
+            if (tsPlayer == null || !tsPlayer.Active || tsPlayer.TPlayer == null) return;
 
-            using (var reader = new BinaryReader(new MemoryStream(args.Msg.readBuffer, args.Index, args.Length)))
+            Player p = tsPlayer.TPlayer;
+            Item item = p.inventory[p.selectedItem];
+
+            // Filter hanya senjata Ranged
+            if (item != null && item.damage > 0 && item.ranged)
             {
-                short x = reader.ReadInt16();
-                short y = reader.ReadInt16();
-
-                int chestID = Chest.FindChest(x, y);
-                if (chestID != -1)
+                if (p.itemAnimation == p.itemAnimationMax - 1 && p.itemAnimation > 0)
                 {
-                    short frameX = Main.tile[x, y].frameX;
-
-                    // frameX >= 36 adalah chest alami
-                    if (frameX >= 36) 
-                    {
-                        RandomizeChest(chestID);
-                        tsPlayer.SendMessage("Chest ALAMI terdeteksi! Ambil isinya sebelum hancur!", Color.Orange);
-                        
-                        WorldGen.KillTile(x, y, false, false, false);
-                        
-                        // Versi kirim paket paling aman dan simpel
-                        NetMessage.SendTileSquare(-1, x, y, 3);
-                    }
+                    SpawnRandomRangedAttack(tsPlayer, item);
                 }
             }
         }
 
-        private void RandomizeChest(int chestID)
+        private void SpawnRandomRangedAttack(TSPlayer tsPlayer, Item item)
         {
-            Chest chest = Main.chest[chestID];
-            if (chest == null) return;
-
+            Vector2 pos = tsPlayer.TPlayer.Center;
+            int dir = tsPlayer.TPlayer.direction;
+            Vector2 vel = new Vector2(dir * 14f, 0f); // Kecepatan dasar
             Random rand = new Random();
-            for (int i = 0; i < 40; i++)
+
+            // Kumpulan ID Proyektil Keren
+            // 83: Laser Merah, 84: Laser Hijau, 100: Death Laser, 226: Chlorophyte, 631: Daybreak
+            int[] projPool = { 83, 84, 100, 226, 631, 242, 440, 118 };
+            
+            // Pilih 1 serangan secara acak dari pool
+            int selectedProj = projPool[rand.Next(projPool.Length)];
+
+            // Variasi jumlah proyektil (antara 1 sampai 3)
+            int amount = rand.Next(1, 4);
+
+            for (int i = 0; i < amount; i++)
             {
-                if (i < rand.Next(4, 9))
-                {
-                    int itemID = lootPool[rand.Next(lootPool.Length)];
-                    chest.item[i].SetDefaults(itemID);
-                    chest.item[i].stack = rand.Next(1, 6);
-                }
-                else
-                {
-                    chest.item[i].SetDefaults(0);
-                }
+                // Kasih sedikit spread (acak arah) supaya tidak numpuk di satu garis
+                float spread = MathHelper.ToRadians(rand.Next(-15, 16));
+                Vector2 finalVel = vel.RotatedBy(spread);
+
+                int pID = Projectile.NewProjectile(null, pos, finalVel, selectedProj, item.damage, 3f, tsPlayer.Index);
+                
+                // Beritahu server untuk kirim proyektil ke semua player
+                NetMessage.SendData((int)PacketTypes.ProjectileNew, -1, -1, null, pID);
+            }
+
+            // Bonus: 10% peluang muncul ledakan Shadowflame di posisi player saat nembak
+            if (rand.Next(10) == 0)
+            {
+                int boom = Projectile.NewProjectile(null, pos, Vector2.Zero, 496, item.damage, 5f, tsPlayer.Index);
+                NetMessage.SendData((int)PacketTypes.ProjectileNew, -1, -1, null, boom);
             }
         }
 
