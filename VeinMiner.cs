@@ -4,16 +4,15 @@ using TerrariaApi.Server;
 using TShockAPI;
 using Microsoft.Xna.Framework;
 
-namespace ChestSelfDestruct
+namespace NaturalChestOnly
 {
     [ApiVersion(2, 1)]
     public class RandomLootPlugin : TerrariaPlugin
     {
-        public override string Name => "Self-Destruct Random Chest";
+        public override string Name => "Natural Self-Destruct Chest";
         public override string Author => "Player";
-        public override Version Version => new Version(1, 2, 0);
+        public override Version Version => new Version(1, 3, 0);
 
-        // Pool item: Life Crystal, Bar, Potion, Rare Materials
         private int[] lootPool = { 29, 21, 19, 706, 31, 2353, 290, 292, 499, 1225 };
 
         public RandomLootPlugin(Main game) : base(game) { }
@@ -25,7 +24,6 @@ namespace ChestSelfDestruct
 
         private void OnGetData(GetDataEventArgs args)
         {
-            // Packet 31: Saat player berinteraksi dengan Chest
             if (args.MsgID != PacketTypes.ChestOpen) return;
 
             TSPlayer tsPlayer = TShock.Players[args.Msg.whoAmI];
@@ -39,21 +37,28 @@ namespace ChestSelfDestruct
                 int chestID = Chest.FindChest(x, y);
                 if (chestID != -1)
                 {
-                    // 1. Acak isi Chest khusus untuk player tersebut
-                    RandomizeChest(chestID);
+                    // CEK APAKAH INI CHEST ALAMI
+                    // frameX > 36 biasanya berarti ini bukan chest kayu standar buatan player
+                    // Atau kita cek tipe chest (Gold, Ice, Shadow, dll)
+                    ushort tileType = Main.tile[x, y].type;
+                    short frameX = Main.tile[x, y].frameX;
 
-                    // 2. Efek Visual/Pesan (Self-Destruct Warning)
-                    tsPlayer.SendMessage("PERINGATAN: Chest ini akan meledak/hancur dalam sekejap!", Color.Red);
+                    // Jika ini Chest Kayu Biasa (frameX == 0 sampai 35) dan ditaruh di area rumah (Surface), skip.
+                    // Kebanyakan chest alami (Gold, Ivy, Frozen) punya frameX 36 ke atas.
+                    if (frameX == 0 && x > Main.spawnTileX - 100 && x < Main.spawnTileX + 100) 
+                    {
+                        return; // Abaikan jika ini kemungkinan chest player di sekitar spawn
+                    }
 
-                    // 3. Hancurkan Tile di Map (Self-Destruct)
-                    // Menggunakan WorldGen.KillTile agar chest hilang dari map tanpa drop item chest-nya
-                    WorldGen.KillTile(x, y, false, false, false);
-
-                    // 4. Sinkronisasi ke semua player bahwa chest tersebut sudah hilang
-                    NetMessage.SendData((int)PacketTypes.TileClean, -1, -1, null, x, y);
-                    
-                    // Tambahan efek suara ledakan di posisi chest (opsional secara visual server)
-                    // Player akan melihat chest hilang dari hadapan mereka setelah dibuka.
+                    // Eksekusi hanya untuk chest yang bukan chest kayu biasa buatan player
+                    if (frameX > 0 || tileType != 21) 
+                    {
+                        RandomizeChest(chestID);
+                        tsPlayer.SendMessage("Chest ALAMI terdeteksi! Segera ambil isinya!", Color.Orange);
+                        
+                        WorldGen.KillTile(x, y, false, false, false);
+                        NetMessage.SendData((int)PacketTypes.TileClean, -1, -1, null, x, y);
+                    }
                 }
             }
         }
@@ -62,22 +67,15 @@ namespace ChestSelfDestruct
         {
             Chest chest = Main.chest[chestID];
             if (chest == null) return;
-
             Random rand = new Random();
-
             for (int i = 0; i < 40; i++)
             {
-                // Isi 4-8 slot secara acak
                 if (i < rand.Next(4, 9))
                 {
-                    int itemID = lootPool[rand.Next(lootPool.Length)];
-                    chest.item[i].SetDefaults(itemID);
+                    chest.item[i].SetDefaults(lootPool[rand.Next(lootPool.Length)]);
                     chest.item[i].stack = rand.Next(1, 6);
                 }
-                else
-                {
-                    chest.item[i].SetDefaults(0);
-                }
+                else chest.item[i].SetDefaults(0);
             }
         }
 
