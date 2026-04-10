@@ -10,9 +10,9 @@ namespace RPGLevelPlugin
     [ApiVersion(2, 1)]
     public class RPGLevel : TerrariaPlugin
     {
-        public override string Name => "RPG Leveling Pure Vanilla";
+        public override string Name => "RPG Leveling Final Fix";
         public override string Author => "Gemini";
-        public override Version Version => new Version(1, 2, 3);
+        public override Version Version => new Version(1, 2, 4);
 
         private Dictionary<string, PlayerStats> playerData = new Dictionary<string, PlayerStats>();
         private const int MAX_LEVEL = 30;
@@ -45,9 +45,7 @@ namespace RPGLevelPlugin
             args.Player.SendSuccessMessage($"Level: {levelDisplay}");
             if (stats.Level < MAX_LEVEL)
                 args.Player.SendSuccessMessage($"XP: {stats.XP} / {stats.NextLevelXP}");
-            else
-                args.Player.SendSuccessMessage("XP: MAKSIMAL");
-                
+            
             args.Player.SendInfoMessage($"Bonus: +{stats.Level} Defense & +{stats.Level}% Damage");
             args.Player.SendInfoMessage("----------------------");
         }
@@ -74,7 +72,7 @@ namespace RPGLevelPlugin
                 stats.XP = 0;
                 stats.NextLevelXP = (int)(stats.NextLevelXP * 1.6); 
 
-                player.GiveItem(74, 1); // Hadiah 1 Platinum
+                player.GiveItem(74, 1); // 1 Platinum
 
                 if (stats.Level >= MAX_LEVEL)
                     TSPlayer.All.SendMessage($"[LEGEND] {player.Name} mencapai LEVEL 30! 🏆", Color.Cyan);
@@ -85,7 +83,6 @@ namespace RPGLevelPlugin
 
         private void OnUpdate(EventArgs args)
         {
-            // Menggunakan TSPlayer loop yang lebih stabil untuk TShock Vanilla
             foreach (TSPlayer tsPlayer in TShock.Players)
             {
                 if (tsPlayer == null || !tsPlayer.Active || tsPlayer.TPlayer == null) continue;
@@ -95,18 +92,16 @@ namespace RPGLevelPlugin
                     var stats = playerData[tsPlayer.Name];
                     Player p = tsPlayer.TPlayer;
 
-                    // --- CARA VANILLA MURNI ---
-                    // Tambah Defense
+                    // Bonus Defense (1 per level)
                     p.statDefense += stats.Level;
 
-                    // Tambah Damage (Semua Tipe)
-                    // Properti ini ada di semua versi Terraria sejak jaman dulu
-                    float damageBoost = stats.Level * 0.01f;
-                    p.meleeDamage += damageBoost;
-                    p.rangedDamage += damageBoost;
-                    p.magicDamage += damageBoost;
-                    p.minionDamage += damageBoost;
-                    p.thrownDamage += damageBoost;
+                    // Bonus Damage (1% per level)
+                    // Menggunakan multiplier dasar yang ada di semua versi 1.4+
+                    float boost = (float)stats.Level / 100f;
+                    p.meleeDamage += boost;
+                    p.rangedDamage += boost;
+                    p.magicDamage += boost;
+                    p.minionDamage += boost;
                 }
             }
         }
