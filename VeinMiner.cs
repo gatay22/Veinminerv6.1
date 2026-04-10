@@ -4,14 +4,14 @@ using TerrariaApi.Server;
 using TShockAPI;
 using Microsoft.Xna.Framework;
 
-namespace NaturalChestOnly
+namespace NaturalChestOnlyFixed
 {
     [ApiVersion(2, 1)]
     public class RandomLootPlugin : TerrariaPlugin
     {
-        public override string Name => "Natural Self-Destruct Chest";
+        public override string Name => "Natural Self-Destruct Chest Fixed";
         public override string Author => "Player";
-        public override Version Version => new Version(1, 3, 0);
+        public override Version Version => new Version(1, 3, 1);
 
         private int[] lootPool = { 29, 21, 19, 706, 31, 2353, 290, 292, 499, 1225 };
 
@@ -37,27 +37,23 @@ namespace NaturalChestOnly
                 int chestID = Chest.FindChest(x, y);
                 if (chestID != -1)
                 {
-                    // CEK APAKAH INI CHEST ALAMI
-                    // frameX > 36 biasanya berarti ini bukan chest kayu standar buatan player
-                    // Atau kita cek tipe chest (Gold, Ice, Shadow, dll)
-                    ushort tileType = Main.tile[x, y].type;
-                    short frameX = Main.tile[x, y].frameX;
+                    // Ambil data tile chest
+                    Tile tile = Main.tile[x, y];
+                    short frameX = tile.frameX;
 
-                    // Jika ini Chest Kayu Biasa (frameX == 0 sampai 35) dan ditaruh di area rumah (Surface), skip.
-                    // Kebanyakan chest alami (Gold, Ivy, Frozen) punya frameX 36 ke atas.
-                    if (frameX == 0 && x > Main.spawnTileX - 100 && x < Main.spawnTileX + 100) 
-                    {
-                        return; // Abaikan jika ini kemungkinan chest player di sekitar spawn
-                    }
-
-                    // Eksekusi hanya untuk chest yang bukan chest kayu biasa buatan player
-                    if (frameX > 0 || tileType != 21) 
+                    // LOGIKA: Hanya proses jika bukan Chest Kayu Biasa (frameX 0-35)
+                    // Chest alami (Gold, Ice, dll) selalu mulai dari frameX 36 ke atas.
+                    if (frameX >= 36) 
                     {
                         RandomizeChest(chestID);
                         tsPlayer.SendMessage("Chest ALAMI terdeteksi! Segera ambil isinya!", Color.Orange);
                         
+                        // Hancurkan tile chest di server
                         WorldGen.KillTile(x, y, false, false, false);
-                        NetMessage.SendData((int)PacketTypes.TileClean, -1, -1, null, x, y);
+                        
+                        // Kirim update ke semua player (Paket ID 17 = Tile)
+                        // 0 = Action (Kill), x, y, 0, 0
+                        NetMessage.SendData((int)PacketTypes.Tile, -1, -1, null, 0, x, y, 0, 0);
                     }
                 }
             }
@@ -72,17 +68,4 @@ namespace NaturalChestOnly
             {
                 if (i < rand.Next(4, 9))
                 {
-                    chest.item[i].SetDefaults(lootPool[rand.Next(lootPool.Length)]);
-                    chest.item[i].stack = rand.Next(1, 6);
-                }
-                else chest.item[i].SetDefaults(0);
-            }
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing) ServerApi.Hooks.NetGetData.Deregister(this, OnGetData);
-            base.Dispose(disposing);
-        }
-    }
-}
+                    chest.item[i].SetDefaults(lootPool[rand.Next(loot
