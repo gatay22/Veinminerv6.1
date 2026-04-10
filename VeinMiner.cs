@@ -12,11 +12,9 @@ namespace RPGLevelPlugin
     {
         public override string Name => "RPG Leveling Max 30";
         public override string Author => "Gemini";
-        public override Version Version => new Version(1, 2, 0);
+        public override Version Version => new Version(1, 2, 1);
 
         private Dictionary<string, PlayerStats> playerData = new Dictionary<string, PlayerStats>();
-        
-        // --- SETTING MAX LEVEL ---
         private const int MAX_LEVEL = 30;
 
         public class PlayerStats
@@ -43,7 +41,7 @@ namespace RPGLevelPlugin
             var stats = playerData[args.Player.Name];
             string levelDisplay = stats.Level >= MAX_LEVEL ? $"{stats.Level} [MAX]" : stats.Level.ToString();
             
-            args.Player.SendInfoMessage($"--- STATS KARAKTER ---");
+            args.Player.SendInfoMessage("--- STATS KARAKTER ---");
             args.Player.SendSuccessMessage($"Level: {levelDisplay}");
             if (stats.Level < MAX_LEVEL)
                 args.Player.SendSuccessMessage($"XP: {stats.XP} / {stats.NextLevelXP}");
@@ -65,8 +63,6 @@ namespace RPGLevelPlugin
                 playerData[player.Name] = new PlayerStats();
 
             var stats = playerData[player.Name];
-
-            // Jika sudah Max Level, tidak perlu hitung XP lagi
             if (stats.Level >= MAX_LEVEL) return;
 
             int xpGain = Math.Max(5, args.npc.lifeMax / 15);
@@ -78,35 +74,59 @@ namespace RPGLevelPlugin
                 stats.XP = 0;
                 stats.NextLevelXP = (int)(stats.NextLevelXP * 1.6); 
 
-                // Hadiah Koin
                 player.GiveItem(74, 1); 
 
                 if (stats.Level >= MAX_LEVEL)
                 {
-                    TSPlayer.All.SendMessage($"[LEGEND] {player.Name} telah mencapai LEVEL MAKSIMAL (30)! 🏆", Color.Cyan);
+                    TSPlayer.All.SendMessage($"[LEGEND] {player.Name} mencapai LEVEL MAKSIMAL (30)! 🏆", Color.Cyan);
                 }
                 else
                 {
                     TSPlayer.All.SendMessage($"[LEVEL UP] {player.Name} Level {stats.Level}! Bonus: 1 Platinum Coin 💰", Color.Gold);
                 }
-                
                 player.SendSuccessMessage("Kekuatanmu meningkat!");
             }
         }
 
         private void OnUpdate(EventArgs args)
         {
-            foreach (TSPlayer player in TShock.Players)
+            for (int i = 0; i < Main.maxPlayers; i++)
             {
-                if (player == null || !player.Active || player.TPlayer == null || !playerData.ContainsKey(player.Name)) continue;
+                Player p = Main.player[i];
+                if (p == null || !p.active) continue;
 
-                var stats = playerData[player.Name];
-                
-                // Bonus tetap aktif meskipun sudah Level 30 (+30 Def & +30% Damage)
-                player.TPlayer.statDefense += stats.Level; 
-                player.TPlayer.GetDamage(DamageClass.Generic) += (stats.Level * 0.01f);
+                if (playerData.ContainsKey(p.name))
+                {
+                    var stats = playerData[p.name];
+                    
+                    // Defense Bonus
+                    p.statDefense += stats.Level;
+                    
+                    // Global Damage Bonus (1% per level)
+                    // Menggunakan properti standar Terraria untuk modifikasi damage
+                    float multiplier = 1f + (stats.Level * 0.01f);
+                    p.GetDamage(Terraria.ModLoader.DamageClass.Generic) *= multiplier;
+                }
             }
         }
+        
+        // Cadangan jika GetDamage tetap error, gunakan versi manual ini:
+        /*
+        private void OnUpdate(EventArgs args)
+        {
+            foreach (TSPlayer player in TShock.Players)
+            {
+                if (player == null || !player.Active || player.TPlayer == null) continue;
+                if (playerData.ContainsKey(player.Name))
+                {
+                    var stats = playerData[player.Name];
+                    player.TPlayer.statDefense += stats.Level;
+                    // Properti vanilla lama:
+                    // player.TPlayer.allDamage += (stats.Level * 0.01f);
+                }
+            }
+        }
+        */
 
         protected override void Dispose(bool disposing)
         {
