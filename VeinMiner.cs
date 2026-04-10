@@ -8,9 +8,9 @@ namespace AccessoryOverdrive
     [ApiVersion(2, 1)]
     public class ReforgePlugin : TerrariaPlugin
     {
-        public override string Name => "Accessory 10 Percent Boost Fixed";
+        public override string Name => "Accessory 10 Percent Boost Final";
         public override string Author => "Player";
-        public override Version Version => new Version(1, 0, 1);
+        public override Version Version => new Version(1, 0, 2);
 
         public ReforgePlugin(Main game) : base(game) { }
 
@@ -28,33 +28,30 @@ namespace AccessoryOverdrive
 
                 Player p = tsPlayer.TPlayer;
 
-                // Slot 3 sampai 9 adalah slot AKSESORIS
+                // Loop slot aksesoris
                 for (int j = 3; j < 10; j++)
                 {
                     Item item = p.armor[j];
                     if (item == null || item.type == 0 || item.prefix == 0) continue;
 
-                    // VERSI VANILLA/TSHOCK (Bukan tModLoader)
+                    // PAKAI LOGIKA DASAR (Fixing CS1061)
                     switch (item.prefix)
                     {
-                        case 65: // Menacing (+4% Damage)
-                            // Tambah 0.06 agar total 0.10 (10%)
-                            p.allDamage += 0.06f; 
+                        case 65: // Menacing
+                            // Di 1.4.4+, kita akses lewat damage multiplier
+                            p.GetDamage(DamageClass.Generic) += 0.06f;
                             break;
-                        case 68: // Lucky (+4% Crit)
-                            // Tambah 6 agar total 10%
-                            p.meleeCrit += 6;
-                            p.rangedCrit += 6;
-                            p.magicCrit += 6;
+                        case 68: // Lucky
+                            p.GetCritChance(DamageClass.Generic) += 6f;
                             break;
-                        case 62: // Warding (+4 Defense)
-                            p.statDefense += 6; 
+                        case 62: // Warding
+                            p.statDefense += 6;
                             break;
-                        case 67: // Quick (+4% Move Speed)
+                        case 67: // Quick
                             p.moveSpeed += 0.06f;
                             break;
-                        case 66: // Violent (+4% Melee Speed)
-                            p.meleeSpeed += 0.06f;
+                        case 66: // Violent
+                            p.GetAttackSpeed(DamageClass.Melee) += 0.06f;
                             break;
                     }
                 }
