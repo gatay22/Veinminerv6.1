@@ -1,74 +1,120 @@
 using System;
+using System.Collections.Generic;
 using Terraria;
 using TerrariaApi.Server;
 using TShockAPI;
 using Microsoft.Xna.Framework;
 
-namespace ClearLagPlugin
+namespace RPGLevelPlugin
 {
     [ApiVersion(2, 1)]
-    public class ClearLag : TerrariaPlugin
+    public class RPGLevel : TerrariaPlugin
     {
-        public override string Name => "Professional Clear Lag";
+        public override string Name => "RPG Leveling Max 30";
         public override string Author => "Gemini";
-        public override Version Version => new Version(1, 0, 2);
+        public override Version Version => new Version(1, 2, 0);
 
-        private int timer = 0;
-        private const int ClearInterval = 36000; // 10 Menit
+        private Dictionary<string, PlayerStats> playerData = new Dictionary<string, PlayerStats>();
+        
+        // --- SETTING MAX LEVEL ---
+        private const int MAX_LEVEL = 30;
 
-        public ClearLag(Main game) : base(game) { }
+        public class PlayerStats
+        {
+            public int Level = 1;
+            public int XP = 0;
+            public int NextLevelXP = 100;
+        }
+
+        public RPGLevel(Main game) : base(game) { }
 
         public override void Initialize()
         {
+            ServerApi.Hooks.NpcKilled.Register(this, OnNpcKilled);
             ServerApi.Hooks.GameUpdate.Register(this, OnUpdate);
-            Commands.ChatCommands.Add(new Command("clearlag.admin", ForceClear, "clearlag"));
+            Commands.ChatCommands.Add(new Command("rpg.check", CheckStats, "level", "stats"));
+        }
+
+        private void CheckStats(CommandArgs args)
+        {
+            if (!playerData.ContainsKey(args.Player.Name))
+                playerData[args.Player.Name] = new PlayerStats();
+
+            var stats = playerData[args.Player.Name];
+            string levelDisplay = stats.Level >= MAX_LEVEL ? $"{stats.Level} [MAX]" : stats.Level.ToString();
+            
+            args.Player.SendInfoMessage($"--- STATS KARAKTER ---");
+            args.Player.SendSuccessMessage($"Level: {levelDisplay}");
+            if (stats.Level < MAX_LEVEL)
+                args.Player.SendSuccessMessage($"XP: {stats.XP} / {stats.NextLevelXP}");
+            else
+                args.Player.SendSuccessMessage("XP: MAXIMUM REACHED");
+                
+            args.Player.SendInfoMessage($"Bonus: +{stats.Level} Defense & +{stats.Level}% Damage");
+            args.Player.SendInfoMessage("----------------------");
+        }
+
+        private void OnNpcKilled(NpcKilledEventArgs args)
+        {
+            if (args.npc.lastInteraction < 0 || args.npc.lastInteraction > 255) return;
+
+            TSPlayer player = TShock.Players[args.npc.lastInteraction];
+            if (player == null || !player.Active) return;
+
+            if (!playerData.ContainsKey(player.Name))
+                playerData[player.Name] = new PlayerStats();
+
+            var stats = playerData[player.Name];
+
+            // Jika sudah Max Level, tidak perlu hitung XP lagi
+            if (stats.Level >= MAX_LEVEL) return;
+
+            int xpGain = Math.Max(5, args.npc.lifeMax / 15);
+            stats.XP += xpGain;
+
+            if (stats.XP >= stats.NextLevelXP)
+            {
+                stats.Level++;
+                stats.XP = 0;
+                stats.NextLevelXP = (int)(stats.NextLevelXP * 1.6); 
+
+                // Hadiah Koin
+                player.GiveItem(74, 1); 
+
+                if (stats.Level >= MAX_LEVEL)
+                {
+                    TSPlayer.All.SendMessage($"[LEGEND] {player.Name} telah mencapai LEVEL MAKSIMAL (30)! 🏆", Color.Cyan);
+                }
+                else
+                {
+                    TSPlayer.All.SendMessage($"[LEVEL UP] {player.Name} Level {stats.Level}! Bonus: 1 Platinum Coin 💰", Color.Gold);
+                }
+                
+                player.SendSuccessMessage("Kekuatanmu meningkat!");
+            }
         }
 
         private void OnUpdate(EventArgs args)
         {
-            timer++;
-
-            if (timer == ClearInterval - 1800)
+            foreach (TSPlayer player in TShock.Players)
             {
-                TSPlayer.All.SendInfoMessage("[ClearLag] Pengosongan sampah dalam 30 detik!");
-            }
+                if (player == null || !player.Active || player.TPlayer == null || !playerData.ContainsKey(player.Name)) continue;
 
-            if (timer >= ClearInterval)
-            {
-                ExecuteClear();
-                timer = 0;
+                var stats = playerData[player.Name];
+                
+                // Bonus tetap aktif meskipun sudah Level 30 (+30 Def & +30% Damage)
+                player.TPlayer.statDefense += stats.Level; 
+                player.TPlayer.GetDamage(DamageClass.Generic) += (stats.Level * 0.01f);
             }
-        }
-
-        private void ForceClear(CommandArgs args)
-        {
-            ExecuteClear();
-            args.Player.SendSuccessMessage("Berhasil membersihkan sampah secara manual!");
-        }
-
-        private void ExecuteClear()
-        {
-            int count = 0;
-            // Loop melalui semua slot item yang ada di dunia (maksimal 400)
-            for (int i = 0; i < 400; i++)
-            {
-                // Kita cek tipenya, jika bukan 0 (udara) berarti ada itemnya
-                if (Main.item[i] != null && Main.item[i].type != 0)
-                {
-                    // SetDefaults(0) akan menghapus data item dan menonaktifkannya secara internal
-                    Main.item[i].SetDefaults(0);
-                    
-                    // Beritahu semua client bahwa item di indeks ini sekarang kosong
-                    NetMessage.SendData((int)PacketTypes.ItemDrop, -1, -1, null, i);
-                    count++;
-                }
-            }
-            TSPlayer.All.SendSuccessMessage($"[ClearLag] Berhasil menghapus {count} item sampah di tanah!");
         }
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing) ServerApi.Hooks.GameUpdate.Deregister(this, OnUpdate);
+            if (disposing)
+            {
+                ServerApi.Hooks.NpcKilled.Deregister(this, OnNpcKilled);
+                ServerApi.Hooks.GameUpdate.Deregister(this, OnUpdate);
+            }
             base.Dispose(disposing);
         }
     }
