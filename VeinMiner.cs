@@ -2,75 +2,79 @@ using System;
 using Terraria;
 using TerrariaApi.Server;
 using TShockAPI;
+using Microsoft.Xna.Framework;
 
-namespace AccessoryOverdrive
+namespace MeleeProjectileRework
 {
     [ApiVersion(2, 1)]
-    public class ReforgePlugin : TerrariaPlugin
+    public class MeleePlugin : TerrariaPlugin
     {
-        public override string Name => "Accessory 10 Percent Boost Real Final";
+        public override string Name => "Unique Melee Projectiles";
         public override string Author => "Player";
-        public override Version Version => new Version(1, 0, 3);
+        public override Version Version => new Version(1, 0, 0);
 
-        public ReforgePlugin(Main game) : base(game) { }
+        public MeleePlugin(Main game) : base(game) { }
 
         public override void Initialize()
         {
-            ServerApi.Hooks.GameUpdate.Register(this, OnUpdate);
+            ServerApi.Hooks.NetGetData.Register(this, OnGetData);
         }
 
-        private void OnUpdate(EventArgs args)
+        private void OnGetData(GetDataEventArgs args)
         {
-            for (int i = 0; i < TShock.Players.Length; i++)
+            if (args.MsgID != PacketTypes.PlayerUpdate) return;
+
+            TSPlayer tsPlayer = TShock.Players[args.Msg.whoAmI];
+            if (tsPlayer == null || !tsPlayer.Active || tsPlayer.TPlayer == null) return;
+
+            Player p = tsPlayer.TPlayer;
+            Item item = p.inventory[p.selectedItem];
+
+            // Cek apakah itu senjata Melee (dan bukan tools seperti kapak/pickaxe)
+            if (item != null && item.damage > 0 && item.melee && item.pick == 0 && item.axe == 0)
             {
-                TSPlayer tsPlayer = TShock.Players[i];
-                if (tsPlayer == null || !tsPlayer.Active || tsPlayer.TPlayer == null) continue;
-
-                Player p = tsPlayer.TPlayer;
-
-                // Slot 3 sampai 9 adalah slot aksesoris
-                for (int j = 3; j < 10; j++)
+                // Trigger hanya saat animasi ayunan pedang dimulai
+                if (p.itemAnimation == p.itemAnimationMax - 1 && p.itemAnimation > 0)
                 {
-                    Item item = p.armor[j];
-                    if (item == null || item.type == 0 || item.prefix == 0) continue;
-
-                    // MENGGUNAKAN VARIABEL DASAR VANILLA (PASTI BISA BUILD)
-                    switch (item.prefix)
-                    {
-                        case 65: // Menacing (+4% Damage)
-                            float boostDmg = 0.06f; // Tambah 6%
-                            p.meleeDamage += boostDmg;
-                            p.magicDamage += boostDmg;
-                            p.rangedDamage += boostDmg;
-                            p.minionDamage += boostDmg;
-                            break;
-
-                        case 68: // Lucky (+4% Crit)
-                            int boostCrit = 6; // Tambah 6%
-                            p.meleeCrit += boostCrit;
-                            p.magicCrit += boostCrit;
-                            p.rangedCrit += boostCrit;
-                            break;
-
-                        case 62: // Warding (+4 Defense)
-                            p.statDefense += 6;
-                            break;
-
-                        case 67: // Quick (+4% Move Speed)
-                            p.moveSpeed += 0.06f;
-                            break;
-
-                        case 66: // Violent (+4% Melee Speed)
-                            p.meleeSpeed += 0.06f;
-                            break;
-                    }
+                    ShootUniqueProjectile(tsPlayer, item);
                 }
             }
         }
 
+        private void ShootUniqueProjectile(TSPlayer tsPlayer, Item item)
+        {
+            Vector2 pos = tsPlayer.TPlayer.Center;
+            Vector2 velocity = new Vector2(tsPlayer.TPlayer.direction * 12f, 0f);
+            int projID;
+
+            // LOGIKA PEMBEDA PROYEKTIL BERDASARKAN NAMA PEDANG
+            string name = item.Name ?? "";
+
+            if (name.Contains("Star")) 
+                projID = 12; // Falling Star
+            else if (name.Contains("Fire") || name.Contains("Fiery") || name.Contains("Flame")) 
+                projID = 188; // Magma Ball
+            else if (name.Contains("Ice") || name.Contains("Frost") || name.Contains("Frozen")) 
+                projID = 118; // Frost Beam
+            else if (name.Contains("Grass") || name.Contains("Blade of Grass") || name.Contains("Thorn")) 
+                projID = 45; // Spore Cloud
+            else if (name.Contains("Excalibur") || name.Contains("Light")) 
+                projID = 156; // Hallowed Beam (Laser Kuning)
+            else if (name.Contains("Night") || name.Contains("Dark")) 
+                projID = 274; // Shadow Beam
+            else 
+                projID = 157; // Laser standar (Purple Beam) untuk pedang lainnya
+
+            // Tembakkan proyektil dengan damage sesuai senjata
+            int proj = Projectile.NewProjectile(null, pos, velocity, projID, item.damage, 5f, tsPlayer.Index);
+            
+            // Kirim data ke semua player agar visualnya muncul
+            NetMessage.SendData((int)PacketTypes.ProjectileNew, -1, -1, null, proj);
+        }
+
         protected override void Dispose(bool disposing)
         {
-            if (disposing) ServerApi.Hooks.GameUpdate.Deregister(this, OnUpdate);
+            if (disposing) ServerApi.Hooks.NetGetData.Deregister(this, OnGetData);
             base.Dispose(disposing);
         }
     }
