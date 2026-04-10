@@ -10,9 +10,9 @@ namespace RPGLevelPlugin
     [ApiVersion(2, 1)]
     public class RPGLevel : TerrariaPlugin
     {
-        public override string Name => "RPG Leveling Max 30";
+        public override string Name => "RPG Leveling Pure Vanilla";
         public override string Author => "Gemini";
-        public override Version Version => new Version(1, 2, 1);
+        public override Version Version => new Version(1, 2, 3);
 
         private Dictionary<string, PlayerStats> playerData = new Dictionary<string, PlayerStats>();
         private const int MAX_LEVEL = 30;
@@ -46,7 +46,7 @@ namespace RPGLevelPlugin
             if (stats.Level < MAX_LEVEL)
                 args.Player.SendSuccessMessage($"XP: {stats.XP} / {stats.NextLevelXP}");
             else
-                args.Player.SendSuccessMessage("XP: MAXIMUM REACHED");
+                args.Player.SendSuccessMessage("XP: MAKSIMAL");
                 
             args.Player.SendInfoMessage($"Bonus: +{stats.Level} Defense & +{stats.Level}% Damage");
             args.Player.SendInfoMessage("----------------------");
@@ -74,59 +74,42 @@ namespace RPGLevelPlugin
                 stats.XP = 0;
                 stats.NextLevelXP = (int)(stats.NextLevelXP * 1.6); 
 
-                player.GiveItem(74, 1); 
+                player.GiveItem(74, 1); // Hadiah 1 Platinum
 
                 if (stats.Level >= MAX_LEVEL)
-                {
-                    TSPlayer.All.SendMessage($"[LEGEND] {player.Name} mencapai LEVEL MAKSIMAL (30)! 🏆", Color.Cyan);
-                }
+                    TSPlayer.All.SendMessage($"[LEGEND] {player.Name} mencapai LEVEL 30! 🏆", Color.Cyan);
                 else
-                {
-                    TSPlayer.All.SendMessage($"[LEVEL UP] {player.Name} Level {stats.Level}! Bonus: 1 Platinum Coin 💰", Color.Gold);
-                }
-                player.SendSuccessMessage("Kekuatanmu meningkat!");
+                    TSPlayer.All.SendMessage($"[LEVEL UP] {player.Name} Level {stats.Level}! +1 Platinum 💰", Color.Gold);
             }
         }
 
         private void OnUpdate(EventArgs args)
         {
-            for (int i = 0; i < Main.maxPlayers; i++)
+            // Menggunakan TSPlayer loop yang lebih stabil untuk TShock Vanilla
+            foreach (TSPlayer tsPlayer in TShock.Players)
             {
-                Player p = Main.player[i];
-                if (p == null || !p.active) continue;
+                if (tsPlayer == null || !tsPlayer.Active || tsPlayer.TPlayer == null) continue;
 
-                if (playerData.ContainsKey(p.name))
+                if (playerData.ContainsKey(tsPlayer.Name))
                 {
-                    var stats = playerData[p.name];
-                    
-                    // Defense Bonus
+                    var stats = playerData[tsPlayer.Name];
+                    Player p = tsPlayer.TPlayer;
+
+                    // --- CARA VANILLA MURNI ---
+                    // Tambah Defense
                     p.statDefense += stats.Level;
-                    
-                    // Global Damage Bonus (1% per level)
-                    // Menggunakan properti standar Terraria untuk modifikasi damage
-                    float multiplier = 1f + (stats.Level * 0.01f);
-                    p.GetDamage(Terraria.ModLoader.DamageClass.Generic) *= multiplier;
+
+                    // Tambah Damage (Semua Tipe)
+                    // Properti ini ada di semua versi Terraria sejak jaman dulu
+                    float damageBoost = stats.Level * 0.01f;
+                    p.meleeDamage += damageBoost;
+                    p.rangedDamage += damageBoost;
+                    p.magicDamage += damageBoost;
+                    p.minionDamage += damageBoost;
+                    p.thrownDamage += damageBoost;
                 }
             }
         }
-        
-        // Cadangan jika GetDamage tetap error, gunakan versi manual ini:
-        /*
-        private void OnUpdate(EventArgs args)
-        {
-            foreach (TSPlayer player in TShock.Players)
-            {
-                if (player == null || !player.Active || player.TPlayer == null) continue;
-                if (playerData.ContainsKey(player.Name))
-                {
-                    var stats = playerData[player.Name];
-                    player.TPlayer.statDefense += stats.Level;
-                    // Properti vanilla lama:
-                    // player.TPlayer.allDamage += (stats.Level * 0.01f);
-                }
-            }
-        }
-        */
 
         protected override void Dispose(bool disposing)
         {
