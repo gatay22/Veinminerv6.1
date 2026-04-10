@@ -11,7 +11,7 @@ namespace ClearLagPlugin
     {
         public override string Name => "Professional Clear Lag";
         public override string Author => "Gemini";
-        public override Version Version => new Version(1, 0, 1);
+        public override Version Version => new Version(1, 0, 2);
 
         private int timer = 0;
         private const int ClearInterval = 36000; // 10 Menit
@@ -49,15 +49,16 @@ namespace ClearLagPlugin
         private void ExecuteClear()
         {
             int count = 0;
-            for (int i = 0; i < 400; i++) // 400 adalah Main.maxItems default
+            // Loop melalui semua slot item yang ada di dunia (maksimal 400)
+            for (int i = 0; i < 400; i++)
             {
-                if (Main.item[i].active && Main.item[i].type != 0)
+                // Kita cek tipenya, jika bukan 0 (udara) berarti ada itemnya
+                if (Main.item[i] != null && Main.item[i].type != 0)
                 {
-                    // Menghapus item dengan menyetel tipenya ke 0 (Air/Kosong)
+                    // SetDefaults(0) akan menghapus data item dan menonaktifkannya secara internal
                     Main.item[i].SetDefaults(0);
-                    Main.item[i].active = false;
                     
-                    // Mengirim sinkronisasi ke semua player agar item hilang secara visual
+                    // Beritahu semua client bahwa item di indeks ini sekarang kosong
                     NetMessage.SendData((int)PacketTypes.ItemDrop, -1, -1, null, i);
                     count++;
                 }
