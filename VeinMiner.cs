@@ -11,7 +11,7 @@ namespace NaturalChestOnlyFixed
     {
         public override string Name => "Natural Self-Destruct Chest Fixed";
         public override string Author => "Player";
-        public override Version Version => new Version(1, 3, 1);
+        public override Version Version => new Version(1, 3, 2);
 
         private int[] lootPool = { 29, 21, 19, 706, 31, 2353, 290, 292, 499, 1225 };
 
@@ -37,35 +37,8 @@ namespace NaturalChestOnlyFixed
                 int chestID = Chest.FindChest(x, y);
                 if (chestID != -1)
                 {
-                    // Ambil data tile chest
-                    Tile tile = Main.tile[x, y];
-                    short frameX = tile.frameX;
+                    // Ambil frameX untuk cek apakah ini chest alami
+                    short frameX = Main.tile[x, y].frameX;
 
-                    // LOGIKA: Hanya proses jika bukan Chest Kayu Biasa (frameX 0-35)
-                    // Chest alami (Gold, Ice, dll) selalu mulai dari frameX 36 ke atas.
-                    if (frameX >= 36) 
-                    {
-                        RandomizeChest(chestID);
-                        tsPlayer.SendMessage("Chest ALAMI terdeteksi! Segera ambil isinya!", Color.Orange);
-                        
-                        // Hancurkan tile chest di server
-                        WorldGen.KillTile(x, y, false, false, false);
-                        
-                        // Kirim update ke semua player (Paket ID 17 = Tile)
-                        // 0 = Action (Kill), x, y, 0, 0
-                        NetMessage.SendData((int)PacketTypes.Tile, -1, -1, null, 0, x, y, 0, 0);
-                    }
-                }
-            }
-        }
-
-        private void RandomizeChest(int chestID)
-        {
-            Chest chest = Main.chest[chestID];
-            if (chest == null) return;
-            Random rand = new Random();
-            for (int i = 0; i < 40; i++)
-            {
-                if (i < rand.Next(4, 9))
-                {
-                    chest.item[i].SetDefaults(lootPool[rand.Next(loot
+                    // frameX >= 36 adalah chest selain chest kayu standar (alami)
+                    if
