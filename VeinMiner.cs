@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using Terraria;
 using TerrariaApi.Server;
 using TShockAPI;
@@ -10,9 +9,9 @@ namespace WhipRework
     [ApiVersion(2, 1)]
     public class DynamicWhipPlugin : TerrariaPlugin
     {
-        public override string Name => "Homing Whip Rework";
+        public override string Name => "Homing Whip Rework Fixed";
         public override string Author => "Player";
-        public override Version Version => new Version(1, 2, 0);
+        public override Version Version => new Version(1, 2, 1);
 
         public DynamicWhipPlugin(Main game) : base(game) { }
 
@@ -31,7 +30,8 @@ namespace WhipRework
             Player p = tsPlayer.TPlayer;
             Item item = p.inventory[p.selectedItem];
 
-            if (item != null && item.damage > 0 && item.summon)
+            // Cek apakah item adalah Summoner Whip (Summon damage dan bukan pickaxe)
+            if (item != null && item.damage > 0 && item.summon && item.pick == 0)
             {
                 if (p.itemAnimation == p.itemAnimationMax - 1 && p.itemAnimation > 0)
                 {
@@ -43,54 +43,6 @@ namespace WhipRework
         private void ApplyHomingWhip(TSPlayer tsPlayer, Item item)
         {
             Vector2 pos = tsPlayer.TPlayer.Center;
-            int projID;
-
-            // Pilih ID proyektil berdasarkan nama cambuk
-            if (item.name.Contains("Snapthorn")) projID = 181; // Bee (Homing otomatis)
-            else if (item.name.Contains("Fire") || item.name.Contains("Spicer")) projID = 504; // Daybreak/Solar Flare
-            else if (item.name.Contains("Cool") || item.name.Contains("Ice")) projID = 344; // Frost Shard
-            else if (item.name.Contains("Kaleidoscope")) projID = 636; // Rainbow Crystal
-            else projID = 307; // Chlorophyte Orb (Homing sangat kuat)
-
-            // LOGIKA MENCARI MUSUH TERDEKAT (Homing)
-            Vector2 velocity = new Vector2(tsPlayer.TPlayer.direction * 10f, 0f);
-            float closestDist = 500f; // Jarak deteksi musuh (pixel)
-            int targetNPC = -1;
-
-            for (int i = 0; i < Main.maxNPCs; i++)
-            {
-                NPC npc = Main.npc[i];
-                if (npc.active && !npc.friendly && npc.damage > 0)
-                {
-                    float dist = Vector2.Distance(pos, npc.Center);
-                    if (dist < closestDist)
-                    {
-                        closestDist = dist;
-                        targetNPC = i;
-                    }
-                }
-            }
-
-            // Jika musuh ketemu, arahkan velocity ke musuh
-            if (targetNPC != -1)
-            {
-                velocity = Vector2.Normalize(Main.npc[targetNPC].Center - pos) * 12f;
-            }
-
-            int proj = Projectile.NewProjectile(null, pos, velocity, projID, item.damage, 5f, tsPlayer.Index);
+            int projID = 307; // Default: Chlorophyte Orb (Homing Kuat)
             
-            // Beritahu proyektil siapa targetnya (untuk proyektil tertentu)
-            if (targetNPC != -1) {
-                Main.projectile[proj].ai[0] = targetNPC;
-            }
-
-            NetMessage.SendData((int)PacketTypes.ProjectileNew, -1, -1, null, proj);
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing) ServerApi.Hooks.NetGetData.Deregister(this, OnGetData);
-            base.Dispose(disposing);
-        }
-    }
-}
+            // Menggunakan Name dengan huruf kapital atau cek
