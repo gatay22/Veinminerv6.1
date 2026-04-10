@@ -24,8 +24,8 @@ namespace MyVeinMiner
 
         private void OnGetData(GetDataEventArgs args)
         {
-            // PERBAIKAN: Ganti TileManipulation jadi TileEdit
-            if (args.MsgID != PacketTypes.TileEdit) return;
+            // PERBAIKAN LAGI: Di TShock 6.1, namanya adalah PacketTypes.Tile
+            if (args.MsgID != PacketTypes.Tile) return;
 
             using (var reader = new BinaryReader(new MemoryStream(args.Msg.readBuffer, args.Index, args.Length)))
             {
@@ -49,7 +49,6 @@ namespace MyVeinMiner
 
         private bool IsOre(int type)
         {
-            // Daftar ID bijih standar
             int[] ores = { 7, 8, 9, 22, 25, 37, 48, 56, 107, 108, 111, 121, 166, 167, 168, 169 };
             return ores.Contains(type);
         }
@@ -66,9 +65,9 @@ namespace MyVeinMiner
                     {
                         WorldGen.KillTile(i, j, false, false, false);
                         
-                        // PERBAIKAN: Pakai SendTileSquare versi terbaru (tanpa TSPlayer.All)
-                        // Atau kirim ke semua player dengan TSPlayer.All.SendTileSquare
-                        TSPlayer.All.SendTileSquare(i, j); 
+                        // PERBAIKAN WARNING: Kita gunakan SendTileSquare standar
+                        // TShock 6.1 biasanya minta (x, y, size)
+                        TSPlayer.All.SendTileSquare(i, j, 1);
                     }
                 }
             }
