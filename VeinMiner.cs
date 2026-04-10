@@ -11,34 +11,28 @@ namespace ClearLagPlugin
     {
         public override string Name => "Professional Clear Lag";
         public override string Author => "Gemini";
-        public override Version Version => new Version(1, 0, 0);
+        public override Version Version => new Version(1, 0, 1);
 
         private int timer = 0;
-        // 60 detik * 60 tick = 3600 per menit. 10 menit = 36000.
-        private const int ClearInterval = 36000; 
+        private const int ClearInterval = 36000; // 10 Menit
 
         public ClearLag(Main game) : base(game) { }
 
         public override void Initialize()
         {
             ServerApi.Hooks.GameUpdate.Register(this, OnUpdate);
-            Commands.ChatCommands.Add(new Command("clearlag.admin", ForceClear, "clearlag") 
-            { 
-                HelpText = "Menghapus semua item yang tergeletak di tanah secara manual." 
-            });
+            Commands.ChatCommands.Add(new Command("clearlag.admin", ForceClear, "clearlag"));
         }
 
         private void OnUpdate(EventArgs args)
         {
             timer++;
 
-            // Peringatan 30 detik sebelum pembersihan
             if (timer == ClearInterval - 1800)
             {
                 TSPlayer.All.SendInfoMessage("[ClearLag] Pengosongan sampah dalam 30 detik!");
             }
 
-            // Eksekusi pembersihan otomatis
             if (timer >= ClearInterval)
             {
                 ExecuteClear();
@@ -55,12 +49,15 @@ namespace ClearLagPlugin
         private void ExecuteClear()
         {
             int count = 0;
-            for (int i = 0; i < Main.maxItems; i++)
+            for (int i = 0; i < 400; i++) // 400 adalah Main.maxItems default
             {
-                if (Main.item[i].active)
+                if (Main.item[i].active && Main.item[i].type != 0)
                 {
-                    Main.item[i].active = false; // Hapus item
-                    // Kirim data ke semua player agar item hilang di layar mereka
+                    // Menghapus item dengan menyetel tipenya ke 0 (Air/Kosong)
+                    Main.item[i].SetDefaults(0);
+                    Main.item[i].active = false;
+                    
+                    // Mengirim sinkronisasi ke semua player agar item hilang secara visual
                     NetMessage.SendData((int)PacketTypes.ItemDrop, -1, -1, null, i);
                     count++;
                 }
