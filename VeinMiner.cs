@@ -4,18 +4,18 @@ using TerrariaApi.Server;
 using TShockAPI;
 using Microsoft.Xna.Framework;
 
-namespace AdaptiveArmorOnly
+namespace UltimateVisualPlugin
 {
     [ApiVersion(2, 1)]
-    public class ArmorPlugin : TerrariaPlugin
+    public class MasterPlugin : TerrariaPlugin
     {
-        public override string Name => "Adaptive Armor Shields";
+        public override string Name => "Godly Armor & Accessory Effects";
         public override string Author => "Gemini";
-        public override Version Version => new Version(1, 0, 1);
+        public override Version Version => new Version(1, 1, 0);
 
         private int timer = 0;
 
-        public ArmorPlugin(Main game) : base(game) { }
+        public MasterPlugin(Main game) : base(game) { }
 
         public override void Initialize()
         {
@@ -32,86 +32,43 @@ namespace AdaptiveArmorOnly
                 if (tsPlayer == null || !tsPlayer.Active || tsPlayer.TPlayer == null || tsPlayer.Dead) continue;
 
                 Player p = tsPlayer.TPlayer;
+
+                // --- BAGIAN 1: ARMOR SHIELD (DAMAGE TINGGI) ---
                 int headID = p.armor[0].type;
+                int armProj = -1;
+                int armDmg = 10;
 
-                int projID = -1;
-                int damage = 10;
-                float kb = 3f;
+                if (headID == 79 || headID == 80 || headID == 81) { armProj = 157; armDmg = 12; } // Iron/Lead
+                else if (headID == 231 || headID == 2763) { armProj = 15; armDmg = 40; } // Fire
+                else if (headID >= 2851 && headID <= 2862) { armProj = 614; armDmg = 70; } // Endgame
 
-                // 1. ORE AWAL
-                if (headID == 79 || headID == 80 || headID == 81 || headID == 76 || headID == 77 || headID == 78) 
+                if (armProj != -1 && timer % 60 == 0)
                 {
-                    projID = 157;
-                    damage = 12;
-                }
-                // 2. ORE MEWAH
-                else if (headID == 82 || headID == 83 || headID == 414 || headID == 415)
-                {
-                    projID = 156;
-                    damage = 18;
-                }
-                // 3. ARMOR API
-                else if (headID == 231 || headID == 2763)
-                {
-                    projID = 15;
-                    damage = 35;
-                    kb = 6f;
-                }
-                // 4. ARMOR GELAP
-                else if (headID == 101 || headID == 102)
-                {
-                    projID = 496;
-                    damage = 25;
-                }
-                // 5. ARMOR DARAH
-                else if (headID == 792)
-                {
-                    projID = 305;
-                    damage = 25;
-                }
-                // 6. ARMOR HUTAN
-                else if (headID == 228 || headID == 1001 || headID == 1002 || headID == 1003)
-                {
-                    projID = 228;
-                    damage = 20;
-                }
-                // 7. ARMOR LEBAH
-                else if (headID == 2361)
-                {
-                    projID = 181;
-                    damage = 15;
-                }
-                // 8. ARMOR ES
-                else if (headID == 684)
-                {
-                    projID = 118;
-                    damage = 28;
-                }
-                // 9. ARMOR SUCI
-                else if (headID == 553 || headID == 558 || headID == 559)
-                {
-                    projID = 173;
-                    damage = 30;
-                }
-                // 10. ARMOR DEWA
-                else if (headID >= 2851 && headID <= 2862)
-                {
-                    projID = 614;
-                    damage = 60;
-                    kb = 10f;
+                    int pID = Projectile.NewProjectile(null, p.Center, Vector2.Zero, armProj, armDmg, 5f, tsPlayer.Index);
+                    Main.projectile[pID].timeLeft = 40;
+                    NetMessage.SendData((int)PacketTypes.ProjectileNew, -1, -1, null, pID);
                 }
 
-                if (projID != -1 && timer % 60 == 0)
+                // --- BAGIAN 2: AKSESORIS (DAMAGE KECIL / VISUAL) ---
+                for (int i = 3; i <= 8; i++)
                 {
-                    for (int i = 0; i < 2; i++)
+                    Item acc = p.armor[i];
+                    if (acc == null || acc.type == 0) continue;
+
+                    // Efek Sayap (Wing Trail) - Damage 5
+                    if (acc.wingTimeMax > 0 && p.velocity.Y != 0 && timer % 30 == 0)
                     {
-                        Vector2 offset = new Vector2(i == 0 ? 38 : -38, -5);
-                        int pID = Projectile.NewProjectile(null, p.Center + offset, Vector2.Zero, projID, damage, kb, tsPlayer.Index);
-                        if (pID != 1000) // Cek limit proyektil Terraria
-                        {
-                            Main.projectile[pID].timeLeft = 40;
-                            NetMessage.SendData((int)PacketTypes.ProjectileNew, -1, -1, null, pID);
-                        }
+                        int wID = Projectile.NewProjectile(null, p.Bottom, Vector2.Zero, 502, 5, 0f, tsPlayer.Index);
+                        Main.projectile[wID].timeLeft = 20;
+                        NetMessage.SendData((int)PacketTypes.ProjectileNew, -1, -1, null, wID);
+                    }
+
+                    // Efek Sepatu (Speed Trail) - Damage 8
+                    if ((acc.type == 54 || acc.type == 1862) && Math.Abs(p.velocity.X) > 8)
+                    {
+                        int sID = Projectile.NewProjectile(null, p.Bottom, Vector2.Zero, 612, 8, 0f, tsPlayer.Index);
+                        Main.projectile[sID].timeLeft = 15;
+                        NetMessage.SendData((int)PacketTypes.ProjectileNew, -1, -1, null, sID);
                     }
                 }
             }
