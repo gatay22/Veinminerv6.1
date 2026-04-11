@@ -1,40 +1,41 @@
 using System;
 using System.Collections.Generic;
 using Terraria;
-using Terraria.ID; // Tambahan penting biar TileID kebaca
+using Terraria.ID;
 using TerrariaApi.Server;
 using TShockAPI;
 using Microsoft.Xna.Framework;
+using System.IO;
 
 namespace VeinMinerV6
 {
     [ApiVersion(2, 1)]
     public class VeinMiner : TerrariaPlugin
     {
-        public override string Name => "VeinMiner Pro";
+        public override string Name => "VeinMiner Final";
         public override string Author => "Gemini";
-        public override Version Version => new Version(6, 1, 1);
+        public override Version Version => new Version(6, 1, 2);
 
         public VeinMiner(Main game) : base(game) { }
 
         public override void Initialize()
         {
-            // Menggunakan Hook GetData untuk menangkap paket dari player
             ServerApi.Hooks.NetGetData.Register(this, OnGetData);
         }
 
         private void OnGetData(GetDataEventArgs args)
         {
-            // Packet ID 17 adalah TileEdit (menggantikan TileBreak)
-            if (args.MsgID == PacketTypes.TileEdit)
+            // Kita pakai angka 17 (ID paket Tile Edit di Terraria) 
+            // Ini jauh lebih aman daripada pakai nama PacketTypes yang sering berubah
+            if ((int)args.MsgID == 17)
             {
-                using (var reader = new System.IO.BinaryReader(new System.IO.MemoryStream(args.Msg.readBuffer, args.Index, args.Length)))
+                using (var reader = new BinaryReader(new MemoryStream(args.Msg.readBuffer, args.Index, args.Length)))
                 {
                     byte action = reader.ReadByte();
                     int x = reader.ReadInt16();
                     int y = reader.ReadInt16();
 
-                    // Action 1 = Player hancurin blok
+                    // Action 1 = Player menghancurkan blok
                     if (action == 1)
                     {
                         TSPlayer player = TShock.Players[args.Msg.whoAmI];
@@ -42,12 +43,12 @@ namespace VeinMinerV6
 
                         Item tool = player.TPlayer.HeldItem;
 
-                        // Cek apakah pakai Pickaxe/Drill
+                        // Cek apakah pemain memegang Pickaxe atau Drill
                         if (tool.pick > 0)
                         {
                             ITile tile = Main.tile[x, y];
                             
-                            // Cek apakah itu Ore
+                            // Pastikan yang dihancurkan adalah ORE
                             if (TileID.Sets.Ore[tile.type])
                             {
                                 DestroyVein(x, y, tile.type, player);
@@ -65,7 +66,7 @@ namespace VeinMinerV6
 
             HashSet<Point> visited = new HashSet<Point>();
             int count = 0;
-            int maxBlocks = 150; // Kita naikin dikit biar makin puas nambangnya
+            int maxBlocks = 150; 
 
             while (nodes.Count > 0 && count < maxBlocks)
             {
@@ -81,13 +82,14 @@ namespace VeinMinerV6
                 {
                     count++;
                     
-                    // Hancurkan tile secara aman di server
+                    // Hancurkan tile dan jatuhkan item (logika worldgen)
                     WorldGen.KillTile(current.X, current.Y, false, false, false);
                     
-                    // Kirim update ke semua player agar sinkron
-                    NetMessage.SendData((int)PacketTypes.TileEdit, -1, -1, null, 1, current.X, current.Y);
+                    // Kirim pembaruan ke semua client agar sinkron
+                    // Kita pakai ID 17 langsung di sini juga
+                    NetMessage.SendData(17, -1, -1, null, 1, current.X, current.Y);
 
-                    // Cek tetangga
+                    // Cek blok tetangga (atas, bawah, kiri, kanan)
                     nodes.Enqueue(new Point(current.X + 1, current.Y));
                     nodes.Enqueue(new Point(current.X - 1, current.Y));
                     nodes.Enqueue(new Point(current.X, current.Y + 1));
