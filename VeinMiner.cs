@@ -15,9 +15,8 @@ namespace VeinMinerV6
     {
         public override string Name => "VeinMiner & Melee Rework";
         public override string Author => "Gemini";
-        public override Version Version => new Version(6, 1, 7);
+        public override Version Version => new Version(6, 1, 8);
 
-        // Jeda untuk efek fighting agar tidak spam (Cooldown 250ms)
         private DateTime[] _lastMeleeEffect = new DateTime[256];
 
         public VeinMiner(Main game) : base(game) { }
@@ -28,9 +27,6 @@ namespace VeinMinerV6
             ServerApi.Hooks.NpcStrike.Register(this, OnNpcStrike, 10);
         }
 
-        // ==========================================
-        // 1. MELEE REWORK SYSTEM (FIGHTING)
-        // ==========================================
         private void OnNpcStrike(NpcStrikeEventArgs args)
         {
             if (args.Handled) return;
@@ -38,7 +34,6 @@ namespace VeinMinerV6
             TSPlayer player = TShock.Players[args.Player.whoAmI];
             if (player == null || !player.Active) return;
 
-            // Cek Jeda (Internal Cooldown)
             if ((DateTime.UtcNow - _lastMeleeEffect[player.Index]).TotalMilliseconds < 250) return;
             _lastMeleeEffect[player.Index] = DateTime.UtcNow;
 
@@ -47,17 +42,13 @@ namespace VeinMinerV6
             if (item.damage > 0 && item.melee)
             {
                 int dustType = GetDustForSword(item.type);
-                
-                // Efek visual ledakan kecil di target
                 SpawnDustExplosion(args.Npc.Center, dustType, 4);
 
-                // Logika Homing (Ngejar) otomatis untuk senjata kuat atau spesifik
                 if (item.damage > 60 || IsSpecialSword(item.type))
                 {
                     DoHomingEnergy(args.Npc, player, dustType);
                 }
 
-                // Efek Spesial: Night's Edge (Lifesteal)
                 if (item.type == ItemID.NightsEdge)
                 {
                     int heal = Main.rand.Next(1, 3);
@@ -67,12 +58,10 @@ namespace VeinMinerV6
             }
         }
 
-        // ==========================================
-        // 2. VEINMINER & AUTO-PICKUP SYSTEM (MINING)
-        // ==========================================
         private void OnGetData(GetDataEventArgs args)
         {
-            if (args.MsgID == PacketTypes.TileEdit)
+            // Balik pakai angka 17 biar aman dari error definisi PacketTypes
+            if ((int)args.MsgID == 17)
             {
                 using (var reader = new BinaryReader(new MemoryStream(args.Msg.readBuffer, args.Index, args.Length)))
                 {
@@ -80,13 +69,14 @@ namespace VeinMinerV6
                     short x = reader.ReadInt16();
                     short y = reader.ReadInt16();
 
-                    if (action == 1) // Hancurkan blok
+                    if (action == 1) 
                     {
                         TSPlayer player = TShock.Players[args.Msg.whoAmI];
                         if (player != null && player.TPlayer.HeldItem.pick > 0)
                         {
-                            Tile tile = Main.tile[x, y];
-                            if (tile != null && tile.active && TileID.Sets.Ore[tile.type])
+                            ITile tile = Main.tile[x, y];
+                            // Perbaikan: Pakai active() sebagai fungsi
+                            if (tile != null && tile.active() && TileID.Sets.Ore[tile.type])
                             {
                                 MassiveMineWithPickup(x, y, tile.type, player);
                             }
@@ -102,8 +92,6 @@ namespace VeinMinerV6
             Queue<Point> toMine = new Queue<Point>();
             toMine.Enqueue(new Point(x, y));
             HashSet<Point> done = new HashSet<Point>();
-
-            // Cari ID Item dari blok ore tersebut
             int itemType = GetItemDrop(oreType);
 
             while (toMine.Count > 0 && mined < 100)
@@ -112,15 +100,14 @@ namespace VeinMinerV6
                 if (done.Contains(p) || p.X < 5 || p.X >= Main.maxTilesX - 5 || p.Y < 5 || p.Y >= Main.maxTilesY - 5) continue;
                 done.Add(p);
 
-                Tile tile = Main.tile[p.X, p.Y];
-                if (tile.active && tile.type == oreType)
+                ITile tile = Main.tile[p.X, p.Y];
+                if (tile != null && tile.active() && tile.type == oreType)
                 {
                     mined++;
-                    // Hancurkan tanpa drop di tanah (true = noItem)
                     WorldGen.KillTile(p.X, p.Y, false, false, true);
-                    NetMessage.SendData((int)PacketTypes.TileEdit, -1, -1, null, 1, p.X, p.Y, 0, 0);
+                    // Kirim paket 17 secara manual
+                    NetMessage.SendData(17, -1, -1, null, 1, p.X, p.Y, 0, 0);
 
-                    // AUTO-PICKUP: Masukkan ke inventory
                     if (itemType > 0) player.GiveItem(itemType, 1);
 
                     toMine.Enqueue(new Point(p.X + 1, p.Y));
@@ -131,20 +118,15 @@ namespace VeinMinerV6
             }
         }
 
-        // ==========================================
-        // HELPER FUNCTIONS (VISUAL & LOGIC)
-        // ==========================================
         private void DoHomingEnergy(NPC source, TSPlayer player, int dust)
         {
-            // Cari musuh terdekat dalam radius 300 unit
             NPC target = Main.npc.FirstOrDefault(n => n != null && n.active && !n.friendly && n.whoAmI != source.whoAmI && Vector2.Distance(source.Center, n.Center) < 300);
             
             if (target != null)
             {
-                int dmg = (int)(player.TPlayer.HeldItem.damage * 0.4f); // 40% damage senjata
+                int dmg = (int)(player.TPlayer.HeldItem.damage * 0.4f);
                 player.TPlayer.ApplyDamageToNPC(target, dmg, 0, 0, false);
                 
-                // Visual garis energi antar musuh
                 for (int i = 0; i < 8; i++) {
                     Vector2 dustPos = Vector2.Lerp(source.Center, target.Center, i / 8f);
                     int d = Dust.NewDust(dustPos, 1, 1, dust);
