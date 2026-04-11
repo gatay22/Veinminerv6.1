@@ -1,49 +1,172 @@
-private void ApplyHomingEffect(NPC primaryTarget, TSPlayer player)
-{
-    // Cari musuh terdekat selain yang baru saja dipukul
-    NPC closestNpc = null;
-    float closestDist = 400f; // Jarak maksimal pengejaran (25 blok)
+using System;
+using System.Collections.Generic;
+using System.IO;
+using Terraria;
+using Terraria.ID;
+using TerrariaApi.Server;
+using TShockAPI;
+using Microsoft.Xna.Framework;
 
-    foreach (NPC npc in Main.npc)
+namespace VeinMinerV6
+{
+    [ApiVersion(2, 1)]
+    public class VeinMiner : TerrariaPlugin
     {
-        if (npc.active && !npc.friendly && npc.whoAmI != primaryTarget.whoAmI && !npc.dontTakeDamage)
+        public override string Name => "VeinMiner & Melee Rework";
+        public override string Author => "Gemini";
+        public override Version Version => new Version(6, 1, 3);
+
+        private Dictionary<int, DateTime> _lastEffectTime = new Dictionary<int, DateTime>();
+
+        public VeinMiner(Main game) : base(game) { }
+
+        public override void Initialize()
         {
-            float dist = Vector2.Distance(primaryTarget.Center, npc.Center);
-            if (dist < closestDist)
+            // Hook untuk nambang (VeinMiner)
+            ServerApi.Hooks.NetGetData.Register(this, OnGetData);
+            // Hook untuk fighting (Melee Rework)
+            ServerApi.Hooks.NPCStrike.Register(this, OnNpcStrike);
+        }
+
+        // --- BAGIAN 1: MELEE REWORK (FIGHTING) ---
+        private void OnNpcStrike(NpcStrikeEventArgs args)
+        {
+            TSPlayer player = TShock.Players[args.Player.whoAmI];
+            if (player == null || !player.Active) return;
+
+            // Anti-Spam Visual (200ms)
+            if (_lastEffectTime.ContainsKey(player.Index))
             {
-                closestDist = dist;
-                closestNpc = npc;
+                if ((DateTime.UtcNow - _lastEffectTime[player.Index]).TotalMilliseconds < 200) return;
+            }
+            _lastEffectTime[player.Index] = DateTime.UtcNow;
+
+            Item sword = player.TPlayer.HeldItem;
+            if (sword.damage > 0 && sword.CountsAsClass(DamageClass.Melee))
+            {
+                ApplyMeleeEffects(sword.type, args.Npc, player);
             }
         }
-    }
 
-    // Jika musuh kedua ditemukan, buat "energi" yang mengejar
-    if (closestNpc != null)
-    {
-        // Visual: Gunakan partikel yang bergerak dari target A ke target B
-        Vector2 startPos = primaryTarget.Center;
-        Vector2 targetPos = closestNpc.Center;
-        
-        // Kita buat simulasi perjalanan partikel (Garis yang mengejar)
-        for (int i = 0; i < 5; i++) 
+        private void ApplyMeleeEffects(int type, NPC target, TSPlayer player)
         {
-            // Lerp untuk membuat titik-titik di antara dua musuh
-            float progress = i / 5f;
-            Vector2 dustPos = Vector2.Lerp(startPos, targetPos, progress);
-            
-            // Berikan sedikit variasi posisi (biar gak lurus kaku)
-            dustPos += new Vector2(Main.rand.Next(-5, 6), Main.rand.Next(-5, 6));
-
-            int d = Dust.NewDust(dustPos, 1, 1, 226, 0, 0, 100, default, 0.8f); // 226: Biru Azure (Electric)
-            Main.dust[d].noGravity = true;
-            Main.dust[d].velocity *= 0.5f;
+            switch (type)
+            {
+                case ItemID.Muramasa:
+                    CreateDustEffect(target.Center, 29, 3);
+                    ApplyHomingEnergy(target, player, 226);
+                    break;
+                case ItemID.NightsEdge:
+                    int heal = Main.rand.Next(1, 3);
+                    player.TPlayer.statLife += heal;
+                    player.TPlayer.HealEffect(heal);
+                    CreateDustEffect(target.Center, 27, 4);
+                    break;
+                case ItemID.TerraBlade:
+                    CreateDustEffect(target.Center, 107, 5);
+                    ApplyHomingEnergy(target, player, 107);
+                    break;
+                default:
+                    CreateDustEffect(target.Center, 31, 2);
+                    break;
+            }
         }
 
-        // Berikan damage ke musuh yang dikejar
-        // Tanpa knockback supaya musuh gak terpental jauh dari jangkauan pedang
-        player.TPlayer.ApplyDamageToNPC(closestNpc, player.TPlayer.HeldItem.damage / 3, 0f, 0, false);
-        
-        // Munculkan teks kecil di target yang kena kejar
-        CombatText.NewText(closestNpc.getRect(), Color.Cyan, "Chained!", false, true);
-    }
-}
+        private void ApplyHomingEnergy(NPC source, TSPlayer player, int dustType)
+        {
+            NPC closest = null;
+            float maxDist = 350f;
+            foreach (NPC n in Main.npc)
+            {
+                if (n.active && !n.friendly && n.whoAmI != source.whoAmI && !n.dontTakeDamage)
+                {
+                    float dist = Vector2.Distance(source.Center, n.Center);
+                    if (dist < maxDist) { maxDist = dist; closest = n; }
+                }
+            }
+            if (closest != null)
+            {
+                int dmg = player.TPlayer.GetWeaponDamage(player.TPlayer.HeldItem) / 3;
+                player.TPlayer.ApplyDamageToNPC(closest, dmg, 0f, 0, false);
+                for (float i = 0; i < 1; i += 0.25f)
+                {
+                    int d = Dust.NewDust(Vector2.Lerp(source.Center, closest.Center, i), 1, 1, dustType);
+                    Main.dust[d].noGravity = true;
+                    Main.dust[d].velocity *= 0f;
+                }
+            }
+        }
+
+        // --- BAGIAN 2: VEINMINER (NAMBANG) ---
+        private void OnGetData(GetDataEventArgs args)
+        {
+            if ((int)args.MsgID == 17) // Packet 17 = Tile Edit
+            {
+                using (var reader = new BinaryReader(new MemoryStream(args.Msg.readBuffer, args.Index, args.Length)))
+                {
+                    byte action = reader.ReadByte();
+                    int x = reader.ReadInt16();
+                    int y = reader.ReadInt16();
+
+                    if (action == 1) // Hancurkan blok
+                    {
+                        TSPlayer player = TShock.Players[args.Msg.whoAmI];
+                        if (player == null || !player.Active) return;
+
+                        if (player.TPlayer.HeldItem.pick > 0)
+                        {
+                            ITile tile = Main.tile[x, y];
+                            if (TileID.Sets.Ore[tile.type])
+                            {
+                                DestroyVein(x, y, tile.type, player);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private void DestroyVein(int x, int y, ushort tileType, TSPlayer player)
+        {
+            Queue<Point> nodes = new Queue<Point>();
+            nodes.Enqueue(new Point(x, y));
+            HashSet<Point> visited = new HashSet<Point>();
+            int count = 0;
+
+            while (nodes.Count > 0 && count < 100)
+            {
+                Point cur = nodes.Dequeue();
+                if (visited.Contains(cur) || cur.X < 5 || cur.X > Main.maxTilesX - 5) continue;
+                visited.Add(cur);
+
+                ITile tile = Main.tile[cur.X, cur.Y];
+                if (tile.active() && tile.type == tileType)
+                {
+                    count++;
+                    WorldGen.KillTile(cur.X, cur.Y, false, false, false);
+                    NetMessage.SendData(17, -1, -1, null, 1, cur.X, cur.Y);
+
+                    nodes.Enqueue(new Point(cur.X + 1, cur.Y));
+                    nodes.Enqueue(new Point(cur.X - 1, cur.Y));
+                    nodes.Enqueue(new Point(cur.X, cur.Y + 1));
+                    nodes.Enqueue(new Point(cur.X, cur.Y - 1));
+                }
+            }
+        }
+
+        private void CreateDustEffect(Vector2 pos, int type, int count)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                int d = Dust.NewDust(pos, 4, 4, type, Main.rand.NextFloat(-1f, 1f), Main.rand.NextFloat(-1f, 1f));
+                Main.dust[d].noGravity = true;
+                Main.dust[d].scale = 0.8f;
+            }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                ServerApi.Hooks.NetGetData.Deregister(this, OnGetData);
+                ServerApi.Hooks.NPCStrike.Deregister(this
