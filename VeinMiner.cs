@@ -14,7 +14,7 @@ namespace VeinMinerV6
     {
         public override string Name => "VeinMiner & Melee Rework";
         public override string Author => "Gemini";
-        public override Version Version => new Version(6, 1, 4);
+        public override Version Version => new Version(6, 1, 5);
 
         private Dictionary<int, DateTime> _lastEffectTime = new Dictionary<int, DateTime>();
 
@@ -23,7 +23,8 @@ namespace VeinMinerV6
         public override void Initialize()
         {
             ServerApi.Hooks.NetGetData.Register(this, OnGetData);
-            ServerApi.Hooks.NPCStrike.Register(this, OnNpcStrike);
+            // Perbaikan: Pakai NpcStrike (case sensitive)
+            ServerApi.Hooks.NpcStrike.Register(this, OnNpcStrike);
         }
 
         private void OnNpcStrike(NpcStrikeEventArgs args)
@@ -38,7 +39,8 @@ namespace VeinMinerV6
             _lastEffectTime[player.Index] = DateTime.UtcNow;
 
             Item sword = player.TPlayer.HeldItem;
-            if (sword.damage > 0 && sword.CountsAsClass(DamageClass.Melee))
+            // Perbaikan: Pakai .melee untuk kompatibilitas lebih luas
+            if (sword.damage > 0 && sword.melee)
             {
                 ApplyMeleeEffects(sword.type, args.Npc, player);
             }
@@ -74,7 +76,7 @@ namespace VeinMinerV6
             float maxDist = 350f;
             foreach (NPC n in Main.npc)
             {
-                if (n.active && !n.friendly && n.whoAmI != source.whoAmI && !n.dontTakeDamage)
+                if (n != null && n.active && !n.friendly && n.whoAmI != source.whoAmI && !n.dontTakeDamage)
                 {
                     float dist = Vector2.Distance(source.Center, n.Center);
                     if (dist < maxDist) { maxDist = dist; closest = n; }
@@ -82,7 +84,8 @@ namespace VeinMinerV6
             }
             if (closest != null)
             {
-                int dmg = player.TPlayer.GetWeaponDamage(player.TPlayer.HeldItem) / 3;
+                // Perbaikan: Cara ambil damage yang lebih universal
+                int dmg = swordDamage(player.TPlayer) / 3;
                 player.TPlayer.ApplyDamageToNPC(closest, dmg, 0f, 0, false);
                 for (float i = 0; i < 1; i += 0.25f)
                 {
@@ -93,25 +96,34 @@ namespace VeinMinerV6
             }
         }
 
+        // Helper untuk ambil damage senjata
+        private int swordDamage(Player p)
+        {
+            return (int)(p.HeldItem.damage * p.meleeDamage);
+        }
+
         private void OnGetData(GetDataEventArgs args)
         {
             if ((int)args.MsgID == 17)
             {
-                using (var reader = new BinaryReader(new MemoryStream(args.Msg.readBuffer, args.Index, args.Length)))
+                using (var ms = new MemoryStream(args.Msg.readBuffer, args.Index, args.Length))
                 {
-                    byte action = reader.ReadByte();
-                    int x = reader.ReadInt16();
-                    int y = reader.ReadInt16();
-
-                    if (action == 1)
+                    using (var reader = new BinaryReader(ms))
                     {
-                        TSPlayer player = TShock.Players[args.Msg.whoAmI];
-                        if (player != null && player.Active && player.TPlayer.HeldItem.pick > 0)
+                        byte action = reader.ReadByte();
+                        int x = reader.ReadInt16();
+                        int y = reader.ReadInt16();
+
+                        if (action == 1)
                         {
-                            ITile tile = Main.tile[x, y];
-                            if (tile != null && tile.active() && TileID.Sets.Ore[tile.type])
+                            TSPlayer player = TShock.Players[args.Msg.whoAmI];
+                            if (player != null && player.Active && player.TPlayer.HeldItem.pick > 0)
                             {
-                                DestroyVein(x, y, tile.type, player);
+                                ITile tile = Main.tile[x, y];
+                                if (tile != null && tile.active() && TileID.Sets.Ore[tile.type])
+                                {
+                                    DestroyVein(x, y, tile.type, player);
+                                }
                             }
                         }
                     }
@@ -151,7 +163,10 @@ namespace VeinMinerV6
         {
             for (int i = 0; i < count; i++)
             {
-                int d = Dust.NewDust(pos, 4, 4, type, Main.rand.NextFloat(-1f, 1f), Main.rand.NextFloat(-1f, 1f));
+                // Perbaikan: NextFloat() tanpa parameter (0.0 sampai 1.0)
+                float randX = (float)(Main.rand.NextDouble() * 2.0 - 1.0);
+                float randY = (float)(Main.rand.NextDouble() * 2.0 - 1.0);
+                int d = Dust.NewDust(pos, 4, 4, type, randX, randY);
                 Main.dust[d].noGravity = true;
                 Main.dust[d].scale = 0.8f;
             }
@@ -162,7 +177,7 @@ namespace VeinMinerV6
             if (disposing)
             {
                 ServerApi.Hooks.NetGetData.Deregister(this, OnGetData);
-                ServerApi.Hooks.NPCStrike.Deregister(this, OnNpcStrike);
+                ServerApi.Hooks.NpcStrike.Deregister(this, OnNpcStrike);
             }
             base.Dispose(disposing);
         }
