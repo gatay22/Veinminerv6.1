@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Terraria;
 using Terraria.ID;
 using TerrariaApi.Server;
@@ -14,116 +15,80 @@ namespace VeinMinerV6
     {
         public override string Name => "VeinMiner & Melee Rework";
         public override string Author => "Gemini";
-        public override Version Version => new Version(6, 1, 5);
+        public override Version Version => new Version(6, 1, 7);
 
-        private Dictionary<int, DateTime> _lastEffectTime = new Dictionary<int, DateTime>();
+        // Jeda untuk efek fighting agar tidak spam (Cooldown 250ms)
+        private DateTime[] _lastMeleeEffect = new DateTime[256];
 
         public VeinMiner(Main game) : base(game) { }
 
         public override void Initialize()
         {
-            ServerApi.Hooks.NetGetData.Register(this, OnGetData);
-            // Perbaikan: Pakai NpcStrike (case sensitive)
-            ServerApi.Hooks.NpcStrike.Register(this, OnNpcStrike);
+            ServerApi.Hooks.NetGetData.Register(this, OnGetData, 10);
+            ServerApi.Hooks.NpcStrike.Register(this, OnNpcStrike, 10);
         }
 
+        // ==========================================
+        // 1. MELEE REWORK SYSTEM (FIGHTING)
+        // ==========================================
         private void OnNpcStrike(NpcStrikeEventArgs args)
         {
+            if (args.Handled) return;
+
             TSPlayer player = TShock.Players[args.Player.whoAmI];
             if (player == null || !player.Active) return;
 
-            if (_lastEffectTime.ContainsKey(player.Index))
-            {
-                if ((DateTime.UtcNow - _lastEffectTime[player.Index]).TotalMilliseconds < 200) return;
-            }
-            _lastEffectTime[player.Index] = DateTime.UtcNow;
+            // Cek Jeda (Internal Cooldown)
+            if ((DateTime.UtcNow - _lastMeleeEffect[player.Index]).TotalMilliseconds < 250) return;
+            _lastMeleeEffect[player.Index] = DateTime.UtcNow;
 
-            Item sword = player.TPlayer.HeldItem;
-            // Perbaikan: Pakai .melee untuk kompatibilitas lebih luas
-            if (sword.damage > 0 && sword.melee)
-            {
-                ApplyMeleeEffects(sword.type, args.Npc, player);
-            }
-        }
+            Item item = player.TPlayer.HeldItem;
 
-        private void ApplyMeleeEffects(int type, NPC target, TSPlayer player)
-        {
-            switch (type)
+            if (item.damage > 0 && item.melee)
             {
-                case ItemID.Muramasa:
-                    CreateDustEffect(target.Center, 29, 3);
-                    ApplyHomingEnergy(target, player, 226);
-                    break;
-                case ItemID.NightsEdge:
+                int dustType = GetDustForSword(item.type);
+                
+                // Efek visual ledakan kecil di target
+                SpawnDustExplosion(args.Npc.Center, dustType, 4);
+
+                // Logika Homing (Ngejar) otomatis untuk senjata kuat atau spesifik
+                if (item.damage > 60 || IsSpecialSword(item.type))
+                {
+                    DoHomingEnergy(args.Npc, player, dustType);
+                }
+
+                // Efek Spesial: Night's Edge (Lifesteal)
+                if (item.type == ItemID.NightsEdge)
+                {
                     int heal = Main.rand.Next(1, 3);
                     player.TPlayer.statLife += heal;
                     player.TPlayer.HealEffect(heal);
-                    CreateDustEffect(target.Center, 27, 4);
-                    break;
-                case ItemID.TerraBlade:
-                    CreateDustEffect(target.Center, 107, 5);
-                    ApplyHomingEnergy(target, player, 107);
-                    break;
-                default:
-                    CreateDustEffect(target.Center, 31, 2);
-                    break;
-            }
-        }
-
-        private void ApplyHomingEnergy(NPC source, TSPlayer player, int dustType)
-        {
-            NPC closest = null;
-            float maxDist = 350f;
-            foreach (NPC n in Main.npc)
-            {
-                if (n != null && n.active && !n.friendly && n.whoAmI != source.whoAmI && !n.dontTakeDamage)
-                {
-                    float dist = Vector2.Distance(source.Center, n.Center);
-                    if (dist < maxDist) { maxDist = dist; closest = n; }
-                }
-            }
-            if (closest != null)
-            {
-                // Perbaikan: Cara ambil damage yang lebih universal
-                int dmg = swordDamage(player.TPlayer) / 3;
-                player.TPlayer.ApplyDamageToNPC(closest, dmg, 0f, 0, false);
-                for (float i = 0; i < 1; i += 0.25f)
-                {
-                    int d = Dust.NewDust(Vector2.Lerp(source.Center, closest.Center, i), 1, 1, dustType);
-                    Main.dust[d].noGravity = true;
-                    Main.dust[d].velocity *= 0f;
                 }
             }
         }
 
-        // Helper untuk ambil damage senjata
-        private int swordDamage(Player p)
-        {
-            return (int)(p.HeldItem.damage * p.meleeDamage);
-        }
-
+        // ==========================================
+        // 2. VEINMINER & AUTO-PICKUP SYSTEM (MINING)
+        // ==========================================
         private void OnGetData(GetDataEventArgs args)
         {
-            if ((int)args.MsgID == 17)
+            if (args.MsgID == PacketTypes.TileEdit)
             {
-                using (var ms = new MemoryStream(args.Msg.readBuffer, args.Index, args.Length))
+                using (var reader = new BinaryReader(new MemoryStream(args.Msg.readBuffer, args.Index, args.Length)))
                 {
-                    using (var reader = new BinaryReader(ms))
-                    {
-                        byte action = reader.ReadByte();
-                        int x = reader.ReadInt16();
-                        int y = reader.ReadInt16();
+                    byte action = reader.ReadByte();
+                    short x = reader.ReadInt16();
+                    short y = reader.ReadInt16();
 
-                        if (action == 1)
+                    if (action == 1) // Hancurkan blok
+                    {
+                        TSPlayer player = TShock.Players[args.Msg.whoAmI];
+                        if (player != null && player.TPlayer.HeldItem.pick > 0)
                         {
-                            TSPlayer player = TShock.Players[args.Msg.whoAmI];
-                            if (player != null && player.Active && player.TPlayer.HeldItem.pick > 0)
+                            Tile tile = Main.tile[x, y];
+                            if (tile != null && tile.active && TileID.Sets.Ore[tile.type])
                             {
-                                ITile tile = Main.tile[x, y];
-                                if (tile != null && tile.active() && TileID.Sets.Ore[tile.type])
-                                {
-                                    DestroyVein(x, y, tile.type, player);
-                                }
+                                MassiveMineWithPickup(x, y, tile.type, player);
                             }
                         }
                     }
@@ -131,44 +96,95 @@ namespace VeinMinerV6
             }
         }
 
-        private void DestroyVein(int x, int y, ushort tileType, TSPlayer player)
+        private void MassiveMineWithPickup(int x, int y, ushort oreType, TSPlayer player)
         {
-            Queue<Point> nodes = new Queue<Point>();
-            nodes.Enqueue(new Point(x, y));
-            HashSet<Point> visited = new HashSet<Point>();
-            int count = 0;
+            int mined = 0;
+            Queue<Point> toMine = new Queue<Point>();
+            toMine.Enqueue(new Point(x, y));
+            HashSet<Point> done = new HashSet<Point>();
 
-            while (nodes.Count > 0 && count < 100)
+            // Cari ID Item dari blok ore tersebut
+            int itemType = GetItemDrop(oreType);
+
+            while (toMine.Count > 0 && mined < 100)
             {
-                Point cur = nodes.Dequeue();
-                if (visited.Contains(cur) || cur.X < 5 || cur.X > Main.maxTilesX - 5 || cur.Y < 5 || cur.Y > Main.maxTilesY - 5) continue;
-                visited.Add(cur);
+                Point p = toMine.Dequeue();
+                if (done.Contains(p) || p.X < 5 || p.X >= Main.maxTilesX - 5 || p.Y < 5 || p.Y >= Main.maxTilesY - 5) continue;
+                done.Add(p);
 
-                ITile tile = Main.tile[cur.X, cur.Y];
-                if (tile.active() && tile.type == tileType)
+                Tile tile = Main.tile[p.X, p.Y];
+                if (tile.active && tile.type == oreType)
                 {
-                    count++;
-                    WorldGen.KillTile(cur.X, cur.Y, false, false, false);
-                    NetMessage.SendData(17, -1, -1, null, 1, cur.X, cur.Y);
+                    mined++;
+                    // Hancurkan tanpa drop di tanah (true = noItem)
+                    WorldGen.KillTile(p.X, p.Y, false, false, true);
+                    NetMessage.SendData((int)PacketTypes.TileEdit, -1, -1, null, 1, p.X, p.Y, 0, 0);
 
-                    nodes.Enqueue(new Point(cur.X + 1, cur.Y));
-                    nodes.Enqueue(new Point(cur.X - 1, cur.Y));
-                    nodes.Enqueue(new Point(cur.X, cur.Y + 1));
-                    nodes.Enqueue(new Point(cur.X, cur.Y - 1));
+                    // AUTO-PICKUP: Masukkan ke inventory
+                    if (itemType > 0) player.GiveItem(itemType, 1);
+
+                    toMine.Enqueue(new Point(p.X + 1, p.Y));
+                    toMine.Enqueue(new Point(p.X - 1, p.Y));
+                    toMine.Enqueue(new Point(p.X, p.Y + 1));
+                    toMine.Enqueue(new Point(p.X, p.Y - 1));
                 }
             }
         }
 
-        private void CreateDustEffect(Vector2 pos, int type, int count)
+        // ==========================================
+        // HELPER FUNCTIONS (VISUAL & LOGIC)
+        // ==========================================
+        private void DoHomingEnergy(NPC source, TSPlayer player, int dust)
         {
-            for (int i = 0; i < count; i++)
+            // Cari musuh terdekat dalam radius 300 unit
+            NPC target = Main.npc.FirstOrDefault(n => n != null && n.active && !n.friendly && n.whoAmI != source.whoAmI && Vector2.Distance(source.Center, n.Center) < 300);
+            
+            if (target != null)
             {
-                // Perbaikan: NextFloat() tanpa parameter (0.0 sampai 1.0)
-                float randX = (float)(Main.rand.NextDouble() * 2.0 - 1.0);
-                float randY = (float)(Main.rand.NextDouble() * 2.0 - 1.0);
-                int d = Dust.NewDust(pos, 4, 4, type, randX, randY);
+                int dmg = (int)(player.TPlayer.HeldItem.damage * 0.4f); // 40% damage senjata
+                player.TPlayer.ApplyDamageToNPC(target, dmg, 0, 0, false);
+                
+                // Visual garis energi antar musuh
+                for (int i = 0; i < 8; i++) {
+                    Vector2 dustPos = Vector2.Lerp(source.Center, target.Center, i / 8f);
+                    int d = Dust.NewDust(dustPos, 1, 1, dust);
+                    Main.dust[d].noGravity = true;
+                    Main.dust[d].scale = 0.8f;
+                }
+            }
+        }
+
+        private int GetItemDrop(ushort tileType)
+        {
+            for (int i = 0; i < ItemID.Count; i++) {
+                Item item = new Item();
+                item.SetDefaults(i);
+                if (item.createTile == tileType) return i;
+            }
+            return 0;
+        }
+
+        private int GetDustForSword(int type) {
+            switch(type) {
+                case ItemID.Muramasa: return 29;
+                case ItemID.NightsEdge: return 27;
+                case ItemID.TerraBlade: return 107;
+                case ItemID.FieryGreatsword: return 6;
+                default: return 31;
+            }
+        }
+
+        private bool IsSpecialSword(int type) {
+            int[] special = { ItemID.Muramasa, ItemID.NightsEdge, ItemID.TerraBlade, ItemID.Excalibur };
+            return special.Contains(type);
+        }
+
+        private void SpawnDustExplosion(Vector2 pos, int type, int count) {
+            for (int i = 0; i < count; i++) {
+                float vX = (float)(Main.rand.NextDouble() * 4 - 2);
+                float vY = (float)(Main.rand.NextDouble() * 4 - 2);
+                int d = Dust.NewDust(pos, 4, 4, type, vX, vY);
                 Main.dust[d].noGravity = true;
-                Main.dust[d].scale = 0.8f;
             }
         }
 
