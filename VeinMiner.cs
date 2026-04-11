@@ -14,7 +14,7 @@ namespace VeinMinerV6
     {
         public override string Name => "VeinMiner & Melee Rework";
         public override string Author => "Gemini";
-        public override Version Version => new Version(6, 1, 3);
+        public override Version Version => new Version(6, 1, 4);
 
         private Dictionary<int, DateTime> _lastEffectTime = new Dictionary<int, DateTime>();
 
@@ -22,19 +22,15 @@ namespace VeinMinerV6
 
         public override void Initialize()
         {
-            // Hook untuk nambang (VeinMiner)
             ServerApi.Hooks.NetGetData.Register(this, OnGetData);
-            // Hook untuk fighting (Melee Rework)
             ServerApi.Hooks.NPCStrike.Register(this, OnNpcStrike);
         }
 
-        // --- BAGIAN 1: MELEE REWORK (FIGHTING) ---
         private void OnNpcStrike(NpcStrikeEventArgs args)
         {
             TSPlayer player = TShock.Players[args.Player.whoAmI];
             if (player == null || !player.Active) return;
 
-            // Anti-Spam Visual (200ms)
             if (_lastEffectTime.ContainsKey(player.Index))
             {
                 if ((DateTime.UtcNow - _lastEffectTime[player.Index]).TotalMilliseconds < 200) return;
@@ -97,10 +93,9 @@ namespace VeinMinerV6
             }
         }
 
-        // --- BAGIAN 2: VEINMINER (NAMBANG) ---
         private void OnGetData(GetDataEventArgs args)
         {
-            if ((int)args.MsgID == 17) // Packet 17 = Tile Edit
+            if ((int)args.MsgID == 17)
             {
                 using (var reader = new BinaryReader(new MemoryStream(args.Msg.readBuffer, args.Index, args.Length)))
                 {
@@ -108,15 +103,13 @@ namespace VeinMinerV6
                     int x = reader.ReadInt16();
                     int y = reader.ReadInt16();
 
-                    if (action == 1) // Hancurkan blok
+                    if (action == 1)
                     {
                         TSPlayer player = TShock.Players[args.Msg.whoAmI];
-                        if (player == null || !player.Active) return;
-
-                        if (player.TPlayer.HeldItem.pick > 0)
+                        if (player != null && player.Active && player.TPlayer.HeldItem.pick > 0)
                         {
                             ITile tile = Main.tile[x, y];
-                            if (TileID.Sets.Ore[tile.type])
+                            if (tile != null && tile.active() && TileID.Sets.Ore[tile.type])
                             {
                                 DestroyVein(x, y, tile.type, player);
                             }
@@ -136,7 +129,7 @@ namespace VeinMinerV6
             while (nodes.Count > 0 && count < 100)
             {
                 Point cur = nodes.Dequeue();
-                if (visited.Contains(cur) || cur.X < 5 || cur.X > Main.maxTilesX - 5) continue;
+                if (visited.Contains(cur) || cur.X < 5 || cur.X > Main.maxTilesX - 5 || cur.Y < 5 || cur.Y > Main.maxTilesY - 5) continue;
                 visited.Add(cur);
 
                 ITile tile = Main.tile[cur.X, cur.Y];
@@ -169,4 +162,9 @@ namespace VeinMinerV6
             if (disposing)
             {
                 ServerApi.Hooks.NetGetData.Deregister(this, OnGetData);
-                ServerApi.Hooks.NPCStrike.Deregister(this
+                ServerApi.Hooks.NPCStrike.Deregister(this, OnNpcStrike);
+            }
+            base.Dispose(disposing);
+        }
+    }
+}
