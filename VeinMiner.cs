@@ -3,15 +3,18 @@ using TerrariaApi.Server;
 using TShockAPI;
 using Microsoft.Xna.Framework;
 using System.IO;
+using System.Collections.Generic;
 
 namespace MageReworkPlugin
 {
     [ApiVersion(2, 1)]
     public class MageRework : TerrariaPlugin
     {
-        public override string Name => "Mage Unique Projectiles";
+        public override string Name => "Mage Balanced Fixed";
         public override string Author => "Gemini AI";
-        public override Version Version => new Version(1, 2, 0);
+        public override Version Version => new Version(1, 5, 0);
+
+        private Dictionary<int, long> _lastExtraProjTime = new Dictionary<int, long>();
 
         public MageRework(Main game) : base(game) { }
 
@@ -37,61 +40,55 @@ namespace MageReworkPlugin
                 TSPlayer player = TShock.Players[owner];
                 if (player == null || !player.Active || player.SelectedItem == null || !player.SelectedItem.magic) return;
 
+                // --- 1. FILTER GLOBAL ANTI-SPAM ---
+                long currentTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                if (!_lastExtraProjTime.ContainsKey(owner)) _lastExtraProjTime[owner] = 0;
+                
+                // Cooldown dinaikkan ke 300ms khusus untuk senjata tipe semburan/sparking
+                int cooldownValue = 300;
+                if (currentTime - _lastExtraProjTime[owner] < cooldownValue) return;
+                
+                _lastExtraProjTime[owner] = currentTime;
+
+                // --- 2. PEMILIHAN PROYEKTIL YANG RINGAN (TIDAK MELEDUK) ---
                 int extraType = 0;
-                float dmgMult = 0.4f;
-                bool isHoming = false;
+                float dmgMult = 0.3f;
+                bool shouldHome = true;
                 string name = player.SelectedItem.Name.ToLower();
 
-                // --- SISTEM REWORK: EFEK BEDA-BEDA TIAP SENJATA ---
-
-                if (name.Contains("staff")) // Tipe Tongkat
+                if (name.Contains("sparking"))
                 {
-                    extraType = 122; // Mana Bolt (Biru, Ngejar)
-                    isHoming = true;
-                    dmgMult = 0.5f;
+                    // Ganti ke ID 504 (Blue Flare) - Sangat ringan, tidak nyepam partikel pink
+                    extraType = 504; 
+                    dmgMult = 0.2f;
                 }
-                else if (name.Contains("book") || player.SelectedItem.type == 113) // Tipe Buku
+                else if (name.Contains("staff"))
                 {
-                    extraType = 27; // Water Stream Style (Cepat, Linear)
-                    isHoming = false;
-                    dmgMult = 0.45f;
-                }
-                else if (name.Contains("rod") || name.Contains("wand")) // Tipe Batang/Wand
-                {
-                    extraType = 521; // Shadow Spark (Mistik, Ngejar)
-                    isHoming = true;
+                    extraType = 122; // Mana Bolt
                     dmgMult = 0.4f;
                 }
-                else if (player.SelectedItem.useStyle == 5) // Tipe Pistol (Laser/Gun)
+                else if (name.Contains("book"))
                 {
-                    extraType = 82; // Pink Laser (Instan, Lurus)
-                    isHoming = false;
-                    dmgMult = 0.35f;
+                    extraType = 121; // Crystal Shard (Visual bersih)
+                    shouldHome = false;
                 }
-                else if (name.Contains("harp") || name.Contains("bell") || name.Contains("guitar")) // Tipe Alat Musik
+                else 
                 {
-                    extraType = 76; // Music Note (Melayang acak)
-                    isHoming = true;
-                }
-                else // Senjata Mage lainnya (Misc)
-                {
-                    extraType = 121; // Crystal Shard
-                    isHoming = false;
+                    extraType = 122; // Default ke Mana Bolt yang stabil
                 }
 
-                // --- PROSES SPAWN PROYEKTIL ---
                 if (extraType != 0)
                 {
                     Vector2 velocity = new Vector2(vX, vY);
 
-                    if (isHoming)
+                    if (shouldHome)
                     {
-                        NPC target = FindClosestNPC(posX, posY, 600f);
+                        NPC target = FindClosestNPC(posX, posY, 500f);
                         if (target != null)
                         {
                             Vector2 direction = target.Center - new Vector2(posX, posY);
                             direction.Normalize();
-                            velocity = direction * (new Vector2(vX, vY).Length() * 0.9f);
+                            velocity = direction * 9f; // Kecepatan dikurangi biar gak liar
                         }
                     }
 
@@ -99,14 +96,6 @@ namespace MageReworkPlugin
                         (int)(player.SelectedItem.damage * dmgMult), 1f, owner);
                     
                     NetMessage.SendData((int)PacketTypes.ProjectileNew, -1, -1, null, p);
-                }
-
-                // --- BURST ATTACK SPEED (KADANG-KADANG) ---
-                if (Main.rand.NextDouble() < 0.15)
-                {
-                    vX *= 2.0f;
-                    vY *= 2.0f;
-                    NetMessage.SendData((int)PacketTypes.ProjectileNew, -1, -1, null, identity);
                 }
             }
         }
