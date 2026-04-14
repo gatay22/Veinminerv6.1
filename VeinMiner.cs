@@ -9,10 +9,9 @@ namespace MageReworkPlugin
     [ApiVersion(2, 1)]
     public class MageRework : TerrariaPlugin
     {
-        public override string Name => "Mage Ultimate Rework";
+        public override string Name => "Mage Unique Projectiles";
         public override string Author => "Gemini AI";
-        public override string Description => "Rework senjata mage dengan peluru tambahan dan homing";
-        public override Version Version => new Version(1, 1, 0);
+        public override Version Version => new Version(1, 2, 0);
 
         public MageRework(Main game) : base(game) { }
 
@@ -38,52 +37,61 @@ namespace MageReworkPlugin
                 TSPlayer player = TShock.Players[owner];
                 if (player == null || !player.Active || player.SelectedItem == null || !player.SelectedItem.magic) return;
 
-                // Pengaturan Default
                 int extraType = 0;
                 float dmgMult = 0.4f;
                 bool isHoming = false;
                 string name = player.SelectedItem.Name.ToLower();
 
-                // --- LOGIKA PER KATEGORI SENJATA ---
-                if (name.Contains("staff")) 
+                // --- SISTEM REWORK: EFEK BEDA-BEDA TIAP SENJATA ---
+
+                if (name.Contains("staff")) // Tipe Tongkat
                 {
-                    extraType = 122; // Mana Bolt (Biru)
+                    extraType = 122; // Mana Bolt (Biru, Ngejar)
+                    isHoming = true;
                     dmgMult = 0.5f;
-                    isHoming = true; 
                 }
-                else if (name.Contains("book") || player.SelectedItem.type == 113) 
+                else if (name.Contains("book") || player.SelectedItem.type == 113) // Tipe Buku
                 {
-                    extraType = type; // Meniru peluru asli (Echo)
-                    dmgMult = 0.35f;
-                    isHoming = false; 
+                    extraType = 27; // Water Stream Style (Cepat, Linear)
+                    isHoming = false;
+                    dmgMult = 0.45f;
                 }
-                else if (player.SelectedItem.useStyle == 5) // Tipe Senjata Api/Guns
+                else if (name.Contains("rod") || name.Contains("wand")) // Tipe Batang/Wand
                 {
-                    extraType = 82; // Pink Laser
+                    extraType = 521; // Shadow Spark (Mistik, Ngejar)
+                    isHoming = true;
                     dmgMult = 0.4f;
-                    isHoming = false; 
                 }
-                else // Wands atau lainnya
+                else if (player.SelectedItem.useStyle == 5) // Tipe Pistol (Laser/Gun)
                 {
-                    extraType = 521; // Shadow Spark
-                    dmgMult = 0.3f;
+                    extraType = 82; // Pink Laser (Instan, Lurus)
+                    isHoming = false;
+                    dmgMult = 0.35f;
+                }
+                else if (name.Contains("harp") || name.Contains("bell") || name.Contains("guitar")) // Tipe Alat Musik
+                {
+                    extraType = 76; // Music Note (Melayang acak)
                     isHoming = true;
                 }
+                else // Senjata Mage lainnya (Misc)
+                {
+                    extraType = 121; // Crystal Shard
+                    isHoming = false;
+                }
 
-                // --- SPAWN PROJECTILE TAMBAHAN ---
+                // --- PROSES SPAWN PROYEKTIL ---
                 if (extraType != 0)
                 {
                     Vector2 velocity = new Vector2(vX, vY);
 
                     if (isHoming)
                     {
-                        NPC target = FindClosestNPC(posX, posY, 500f);
+                        NPC target = FindClosestNPC(posX, posY, 600f);
                         if (target != null)
                         {
                             Vector2 direction = target.Center - new Vector2(posX, posY);
                             direction.Normalize();
-                            // Kecepatan peluru homing sedikit lebih santai
-                            velocity = direction * (new Vector2(vX, vY).Length() * 0.85f);
+                            velocity = direction * (new Vector2(vX, vY).Length() * 0.9f);
                         }
                     }
 
@@ -93,13 +101,11 @@ namespace MageReworkPlugin
                     NetMessage.SendData((int)PacketTypes.ProjectileNew, -1, -1, null, p);
                 }
 
-                // --- ATTACK SPEED BURST (KADANG-KADANG) ---
-                // Peluang 15% peluru melesat jauh lebih cepat
+                // --- BURST ATTACK SPEED (KADANG-KADANG) ---
                 if (Main.rand.NextDouble() < 0.15)
                 {
-                    vX *= 1.85f;
-                    vY *= 1.85f;
-                    // Sinkronisasi kecepatan baru ke semua player
+                    vX *= 2.0f;
+                    vY *= 2.0f;
                     NetMessage.SendData((int)PacketTypes.ProjectileNew, -1, -1, null, identity);
                 }
             }
@@ -114,11 +120,7 @@ namespace MageReworkPlugin
                 if (npc != null && npc.active && !npc.friendly && npc.lifeMax > 5 && !npc.dontTakeDamage)
                 {
                     float dist = Vector2.Distance(new Vector2(x, y), npc.Center);
-                    if (dist < minDist)
-                    {
-                        minDist = dist;
-                        closest = npc;
-                    }
+                    if (dist < minDist) { minDist = dist; closest = npc; }
                 }
             }
             return closest;
@@ -126,10 +128,7 @@ namespace MageReworkPlugin
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing)
-            {
-                ServerApi.Hooks.NetGetData.Deregister(this, OnGetData);
-            }
+            if (disposing) ServerApi.Hooks.NetGetData.Deregister(this, OnGetData);
             base.Dispose(disposing);
         }
     }
