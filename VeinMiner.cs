@@ -12,7 +12,7 @@ namespace RareLootNotifier
         public override string Name => "Rare Loot & Fishing Notifier";
         public override string Author => "Gemini AI";
         public override string Description => "Broadcasts a message when a player finds rare loot or fishing items.";
-        public override Version Version => new Version(1.0, 1);
+        public override Version Version => new Version(1.0, 2);
 
         public LootNotifier(Main game) : base(game) { }
 
@@ -23,30 +23,40 @@ namespace RareLootNotifier
 
         private void OnSendData(SendDataEventArgs args)
         {
-            // Packet 90 (ItemOwner) syncs item ownership to all clients
+            // Packet 90 is ItemOwner - synced when someone picks up an item
             if (args.MsgId == PacketTypes.ItemOwner)
             {
-                Item item = Main.item[args.number];
+                // In TShock v6.1, Main.item[index] might be a WorldItem. 
+                // We use the ID to get a temporary Item instance for checking stats.
+                int itemIndex = args.number;
+                Item item = Main.item[itemIndex];
 
-                // --- RARITY FILTER ---
-                // rare >= 4: Light Red, Pink, Light Purple, Lime, Yellow, Cyan, Red, Purple
-                // rare == -1: Quest items or special drops
-                if (item.rare >= 4 || (item.fishingPole > 0 && item.rare >= 3) || item.questItem)
+                if (item != null && !string.IsNullOrEmpty(item.Name))
                 {
-                    TSPlayer player = TShock.Players[item.owner];
-
-                    if (player != null && player.Active && !string.IsNullOrEmpty(item.Name))
+                    // Filter for Rare items (Rarity 4+ or rare fishing gear)
+                    if (item.rare >= 4 || (item.fishingPole > 0 && item.rare >= 3) || item.questItem)
                     {
-                        // English Broadcast Message
-                        // [i:ID] displays the item icon, [c/XXXXXX:text] colors the text
-                        string broadCastMsg = $"[c/00FFFF:RARE FIND!] [c/E1E1E1:{player.Name}] just found [i:{item.type}] [c/FFD700:{item.Name}]!";
+                        // args.ignoreClient usually holds the Player Index for this packet type
+                        int playerIndex = args.ignoreClient;
                         
-                        TShock.Utils.Broadcast(broadCastMsg, Color.Cyan);
+                        // Validate player index range
+                        if (playerIndex >= 0 && playerIndex < TShock.Players.Length)
+                        {
+                            TSPlayer player = TShock.Players[playerIndex];
 
-                        // Console Log (Server Side)
-                        Console.ForegroundColor = ConsoleColor.Cyan;
-                        Console.WriteLine($"[Loot] {player.Name} obtained {item.Name} (ID: {item.type})");
-                        Console.ResetColor();
+                            if (player != null && player.Active)
+                            {
+                                // English Broadcast Message with Item Tag [i:ID]
+                                string broadCastMsg = $"[c/00FFFF:RARE FIND!] [c/E1E1E1:{player.Name}] just found [i:{item.type}] [c/FFD700:{item.Name}]!";
+                                
+                                TShock.Utils.Broadcast(broadCastMsg, Color.Cyan);
+
+                                // Server Console Logging
+                                Console.ForegroundColor = ConsoleColor.Cyan;
+                                Console.WriteLine($"[Loot] {player.Name} obtained {item.Name} (ID: {item.type})");
+                                Console.ResetColor();
+                            }
+                        }
                     }
                 }
             }
