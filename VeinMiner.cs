@@ -2,6 +2,7 @@ using Terraria;
 using TerrariaApi.Server;
 using TShockAPI;
 using Microsoft.Xna.Framework;
+using System; // Tambahkan ini untuk DateTimeOffset
 using System.Collections.Generic;
 
 namespace MageReworkPlugin
@@ -11,19 +12,20 @@ namespace MageReworkPlugin
     {
         public override string Name => "Mage Astral Balanced";
         public override string Author => "Gemini AI";
-        public override Version Version => new Version(5, 1, 0);
+        public override Version Version => new Version(5, 1, 1);
 
-        // Cooldown untuk mencegah Triple Strike muncul terlalu sering
         private Dictionary<int, long> _lastTripleStrike = new Dictionary<int, long>();
 
         public MageAstralBalanced(Main game) : base(game) { }
 
         public override void Initialize()
         {
-            ServerApi.Hooks.NPCStrike.Register(this, OnNPCStrike);
+            // Perbaikan nama Hook: ServerApi.Hooks.NpcStrike
+            ServerApi.Hooks.NpcStrike.Register(this, OnNpcStrike);
         }
 
-        private void OnNPCStrike(NPCStrikeEventArgs args)
+        // Perbaikan nama EventArgs: NpcStrikeEventArgs
+        private void OnNpcStrike(NpcStrikeEventArgs args)
         {
             TSPlayer player = TShock.Players[args.Player.whoAmI];
             if (player == null || !player.Active || player.SelectedItem == null || !player.SelectedItem.magic) return;
@@ -33,12 +35,10 @@ namespace MageReworkPlugin
 
             if (!_lastTripleStrike.ContainsKey(player.Index)) _lastTripleStrike[player.Index] = 0;
 
-            // --- 1. ADAPTIVE BURST (Pasif) ---
-            // Damage dasar tetap ada peningkatan tapi tipis saja (1.4x)
+            // --- 1. ADAPTIVE BURST ---
             args.Damage = (int)(args.Damage * 1.4f);
 
-            // --- 2. TRIPLE STRIKE (Kondisional & Terukur) ---
-            // Peluang 20% DAN hanya bisa muncul setiap 1.5 detik (Cooldown)
+            // --- 2. TRIPLE STRIKE ---
             if (Main.rand.NextDouble() < 0.20 && (currentTime - _lastTripleStrike[player.Index] > 1500))
             {
                 _lastTripleStrike[player.Index] = currentTime;
@@ -46,27 +46,25 @@ namespace MageReworkPlugin
                 for (int i = 0; i < 2; i++)
                 {
                     int extraDmg = (int)(args.Damage * 0.75f);
-                    target.StrikeNPC(extraDmg, args.Knockback, args.HitDirection);
+                    // Gunakan StrikeNPC dengan parameter HitInfo untuk v6.1
+                    target.StrikeNPC(new NPC.HitInfo { Damage = extraDmg, Knockback = args.Knockback, HitDirection = args.HitDirection });
                     NetMessage.SendStrikeNPC(target, new NPC.HitInfo { Damage = extraDmg, Knockback = args.Knockback, HitDirection = args.HitDirection });
                 }
 
-                // Visual saat Triple Strike berhasil (Pesta Bintang)
                 for (int j = 0; j < 12; j++)
                 {
                     Dust.NewDust(target.position, target.width, target.height, 15, 0, -2, 100, Color.Cyan, 1.2f);
                 }
                 player.SendMessage("--- ASTRAL TRIPLE HIT ---", Color.DeepSkyBlue);
             }
-
-            // --- 3. ASTRAL LINK (Hanya muncul saat Triple Strike Gagal) ---
-            // Ini biar layar gak penuh. Kalau sudah Triple Hit, Link tidak muncul.
+            // --- 3. ASTRAL LINK ---
             else if (Main.rand.NextDouble() < 0.40) 
             {
                 NPC nextTarget = FindNextTarget(target, 200f);
                 if (nextTarget != null)
                 {
                     int linkDmg = (int)(args.Damage * 0.4f);
-                    nextTarget.StrikeNPC(linkDmg, 0f, 0);
+                    nextTarget.StrikeNPC(new NPC.HitInfo { Damage = linkDmg });
                     NetMessage.SendStrikeNPC(nextTarget, new NPC.HitInfo { Damage = linkDmg });
                     DrawAstralLine(target.Center, nextTarget.Center);
                 }
@@ -100,7 +98,11 @@ namespace MageReworkPlugin
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing) ServerApi.Hooks.NPCStrike.Deregister(this, OnNPCStrike);
+            if (disposing)
+            {
+                // Jangan lupa deregister hook yang benar
+                ServerApi.Hooks.NpcStrike.Deregister(this, OnNpcStrike);
+            }
             base.Dispose(disposing);
         }
     }
