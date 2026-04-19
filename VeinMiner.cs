@@ -6,13 +6,14 @@ using System;
 
 namespace RareLootNotifier
 {
+    // Fix: Explicitly use 2, 1 as integers
     [ApiVersion(2, 1)]
     public class LootNotifier : TerrariaPlugin
     {
         public override string Name => "Rare Loot & Fishing Notifier";
         public override string Author => "Gemini AI";
-        public override string Description => "Broadcasts a message when a player finds rare loot or fishing items.";
-        public override Version Version => new Version(1.0, 2);
+        public override string Description => "Broadcasts a message when a player finds rare loot.";
+        public override Version Version => new Version(1, 0, 3);
 
         public LootNotifier(Main game) : base(game) { }
 
@@ -23,38 +24,36 @@ namespace RareLootNotifier
 
         private void OnSendData(SendDataEventArgs args)
         {
-            // Packet 90 is ItemOwner - synced when someone picks up an item
             if (args.MsgId == PacketTypes.ItemOwner)
             {
-                // In TShock v6.1, Main.item[index] might be a WorldItem. 
-                // We use the ID to get a temporary Item instance for checking stats.
                 int itemIndex = args.number;
-                Item item = Main.item[itemIndex];
-
-                if (item != null && !string.IsNullOrEmpty(item.Name))
+                
+                // Fix: Cast WorldItem to Item explicitly or access properties safely
+                if (itemIndex >= 0 && itemIndex < Main.item.Length)
                 {
-                    // Filter for Rare items (Rarity 4+ or rare fishing gear)
-                    if (item.rare >= 4 || (item.fishingPole > 0 && item.rare >= 3) || item.questItem)
+                    // In v6.1, we cast to (Item) to access standard properties
+                    Item item = (Item)Main.item[itemIndex];
+
+                    if (item != null && !string.IsNullOrEmpty(item.Name))
                     {
-                        // args.ignoreClient usually holds the Player Index for this packet type
-                        int playerIndex = args.ignoreClient;
-                        
-                        // Validate player index range
-                        if (playerIndex >= 0 && playerIndex < TShock.Players.Length)
+                        if (item.rare >= 4 || (item.fishingPole > 0 && item.rare >= 3) || item.questItem)
                         {
-                            TSPlayer player = TShock.Players[playerIndex];
-
-                            if (player != null && player.Active)
+                            // In this packet, ignoreClient usually represents the player gaining the item
+                            int playerIndex = args.ignoreClient;
+                            
+                            if (playerIndex >= 0 && playerIndex < TShock.Players.Length)
                             {
-                                // English Broadcast Message with Item Tag [i:ID]
-                                string broadCastMsg = $"[c/00FFFF:RARE FIND!] [c/E1E1E1:{player.Name}] just found [i:{item.type}] [c/FFD700:{item.Name}]!";
-                                
-                                TShock.Utils.Broadcast(broadCastMsg, Color.Cyan);
+                                TSPlayer player = TShock.Players[playerIndex];
 
-                                // Server Console Logging
-                                Console.ForegroundColor = ConsoleColor.Cyan;
-                                Console.WriteLine($"[Loot] {player.Name} obtained {item.Name} (ID: {item.type})");
-                                Console.ResetColor();
+                                if (player != null && player.Active)
+                                {
+                                    string broadCastMsg = $"[c/00FFFF:RARE FIND!] [c/E1E1E1:{player.Name}] just found [i:{item.type}] [c/FFD700:{item.Name}]!";
+                                    TShock.Utils.Broadcast(broadCastMsg, Color.Cyan);
+
+                                    Console.ForegroundColor = ConsoleColor.Cyan;
+                                    Console.WriteLine($"[Loot] {player.Name} obtained {item.Name}");
+                                    Console.ResetColor();
+                                }
                             }
                         }
                     }
