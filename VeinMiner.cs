@@ -2,7 +2,7 @@ using Terraria;
 using TerrariaApi.Server;
 using TShockAPI;
 using Microsoft.Xna.Framework;
-using System; // Tambahkan ini untuk DateTimeOffset
+using System;
 using System.Collections.Generic;
 
 namespace MageReworkPlugin
@@ -12,7 +12,7 @@ namespace MageReworkPlugin
     {
         public override string Name => "Mage Astral Balanced";
         public override string Author => "Gemini AI";
-        public override Version Version => new Version(5, 1, 1);
+        public override Version Version => new Version(5, 1, 2);
 
         private Dictionary<int, long> _lastTripleStrike = new Dictionary<int, long>();
 
@@ -20,11 +20,9 @@ namespace MageReworkPlugin
 
         public override void Initialize()
         {
-            // Perbaikan nama Hook: ServerApi.Hooks.NpcStrike
             ServerApi.Hooks.NpcStrike.Register(this, OnNpcStrike);
         }
 
-        // Perbaikan nama EventArgs: NpcStrikeEventArgs
         private void OnNpcStrike(NpcStrikeEventArgs args)
         {
             TSPlayer player = TShock.Players[args.Player.whoAmI];
@@ -46,9 +44,12 @@ namespace MageReworkPlugin
                 for (int i = 0; i < 2; i++)
                 {
                     int extraDmg = (int)(args.Damage * 0.75f);
-                    // Gunakan StrikeNPC dengan parameter HitInfo untuk v6.1
-                    target.StrikeNPC(new NPC.HitInfo { Damage = extraDmg, Knockback = args.Knockback, HitDirection = args.HitDirection });
-                    NetMessage.SendStrikeNPC(target, new NPC.HitInfo { Damage = extraDmg, Knockback = args.Knockback, HitDirection = args.HitDirection });
+                    
+                    // Gunakan metode StrikeNPC versi lama yang lebih stabil di API TShock
+                    target.StrikeNPC(extraDmg, 0f, 0); 
+                    
+                    // Gunakan SendData untuk sinkronisasi damage ke semua player
+                    NetMessage.SendData((int)PacketTypes.NpcStrike, -1, -1, null, target.whoAmI, extraDmg);
                 }
 
                 for (int j = 0; j < 12; j++)
@@ -64,27 +65,36 @@ namespace MageReworkPlugin
                 if (nextTarget != null)
                 {
                     int linkDmg = (int)(args.Damage * 0.4f);
-                    nextTarget.StrikeNPC(new NPC.HitInfo { Damage = linkDmg });
-                    NetMessage.SendStrikeNPC(nextTarget, new NPC.HitInfo { Damage = linkDmg });
+                    nextTarget.StrikeNPC(linkDmg, 0f, 0);
+                    NetMessage.SendData((int)PacketTypes.NpcStrike, -1, -1, null, nextTarget.whoAmI, linkDmg);
                     DrawAstralLine(target.Center, nextTarget.Center);
                 }
             }
 
             // --- 4. MANA RECOVERY ---
             player.TPlayer.statMana += 3;
-            player.TPlayer.ManaEffect(3);
+            // Gunakan statManaMax2 untuk validasi
+            if (player.TPlayer.statMana > player.TPlayer.statManaMax2) 
+                player.TPlayer.statMana = player.TPlayer.statManaMax2;
         }
 
-        private NPC FindNextTarget(NPC current, float range)
+        private NPC? FindNextTarget(NPC current, float range)
         {
+            NPC? closest = null;
+            float minDist = range;
             foreach (NPC npc in Main.npc)
             {
                 if (npc != null && npc.active && !npc.friendly && npc.whoAmI != current.whoAmI && npc.lifeMax > 5)
                 {
-                    if (Vector2.Distance(current.Center, npc.Center) <= range) return npc;
+                    float dist = Vector2.Distance(current.Center, npc.Center);
+                    if (dist <= minDist)
+                    {
+                        minDist = dist;
+                        closest = npc;
+                    }
                 }
             }
-            return null;
+            return closest;
         }
 
         private void DrawAstralLine(Vector2 start, Vector2 end)
@@ -100,7 +110,6 @@ namespace MageReworkPlugin
         {
             if (disposing)
             {
-                // Jangan lupa deregister hook yang benar
                 ServerApi.Hooks.NpcStrike.Deregister(this, OnNpcStrike);
             }
             base.Dispose(disposing);
