@@ -12,32 +12,79 @@ namespace VeinMinerArmorPlugin
     {
         public override string Name => "VeinMiner & Color Adaptive Shields";
         public override string Author => "Gemini AI";
-        public override Version Version => new Version(1.5, 0);
+        public override Version Version => new Version(1.5, 1);
 
         public VeinMinerArmor(Main game) : base(game) { }
 
         public override void Initialize()
         {
-            ServerApi.Hooks.PlayerUpdate.Register(this, OnPlayerUpdate);
+            // Perbaikan nama Hook ke PostPlayerUpdate
+            ServerApi.Hooks.NetGreetPlayer.Register(this, OnGreetPlayer);
             ServerApi.Hooks.GameUpdate.Register(this, OnGameUpdate);
         }
 
-        // --- SECTION 1: VEIN MINER ---
-        private void OnPlayerUpdate(PlayerUpdateEventArgs args)
+        private void OnGreetPlayer(GreetPlayerEventArgs args)
         {
-            TSPlayer player = TShock.Players[args.Player.whoAmI];
-            if (player == null || !player.Active) return;
+            // Digunakan hanya untuk inisialisasi jika diperlukan, 
+            // Vein Miner kita pindahkan ke GameUpdate agar lebih stabil
+        }
 
-            if (player.TPlayer.controlUseItem && player.SelectedItem.pick > 0)
+        // --- SECTION 1 & 2 GABUNGAN (Optimasi Server) ---
+        private void OnGameUpdate(EventArgs args)
+        {
+            foreach (TSPlayer player in TShock.Players)
             {
-                int x = Player.tileTargetX;
-                int y = Player.tileTargetY;
-                if (x < 0 || x >= Main.maxTilesX || y < 0 || y >= Main.maxTilesY) return;
-                
-                Tile tile = Main.tile[x, y];
-                if (tile.active() && (Main.tileOreFinderPriority[tile.type] > 0 || tile.type == 105)) 
+                if (player == null || !player.Active || player.Dead) continue;
+
+                // --- VEIN MINER LOGIC ---
+                if (player.TPlayer.controlUseItem && player.SelectedItem.pick > 0)
                 {
-                    DestroyVein(x, y, tile.type);
+                    int x = Player.tileTargetX;
+                    int y = Player.tileTargetY;
+                    if (x >= 0 && x < Main.maxTilesX && y >= 0 && y < Main.maxTilesY)
+                    {
+                        Tile tile = Main.tile[x, y];
+                        if (tile.active() && (Main.tileOreFinderPriority[tile.type] > 0 || tile.type == 105))
+                        {
+                            DestroyVein(x, y, tile.type);
+                        }
+                    }
+                }
+
+                // --- ADAPTIVE SHIELD LOGIC ---
+                int def = player.TPlayer.statDefense;
+                if (def <= 0) continue;
+
+                // Ambil warna adaptif dari baju player
+                Color adaptiveColor = player.TPlayer.shirtColor;
+                if (player.TPlayer.body > 0)
+                {
+                    // Gunakan warna dasar armor
+                    adaptiveColor = player.TPlayer.GetImmuneAlphaColor(Color.White);
+                }
+
+                int diskCount = Math.Min(5, (def / 10) + 1);
+                float speed = (float)Main.gameTime.TotalGameTime.TotalSeconds * 5f;
+
+                for (int i = 0; i < diskCount; i++)
+                {
+                    float angle = speed + (i * MathHelper.TwoPi / diskCount);
+                    Vector2 offset = new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle)) * 65f;
+                    Vector2 diskPos = player.TPlayer.Center + offset;
+
+                    int d = Dust.NewDust(diskPos, 2, 2, 267, 0, 0, 100, adaptiveColor, 1.2f);
+                    Main.dust[d].noGravity = true;
+
+                    // Damage berkelanjutan
+                    foreach (NPC npc in Main.npc)
+                    {
+                        if (npc != null && npc.active && !npc.friendly && Vector2.Distance(diskPos, npc.Center) < 40f)
+                        {
+                            int dmg = 25 + (int)(def * 1.5f);
+                            npc.StrikeNPC(dmg, 12f, (npc.Center.X < player.X ? -1 : 1));
+                            NetMessage.SendData((int)PacketTypes.NpcStrike, -1, -1, null, npc.whoAmI, dmg, 12f);
+                        }
+                    }
                 }
             }
         }
@@ -47,7 +94,7 @@ namespace VeinMinerArmorPlugin
             Queue<Point> nodes = new Queue<Point>();
             nodes.Enqueue(new Point(x, y));
             int count = 0;
-            while (nodes.Count > 0 && count < 200)
+            while (nodes.Count > 0 && count < 180)
             {
                 Point p = nodes.Dequeue();
                 if (p.X < 0 || p.X >= Main.maxTilesX || p.Y < 0 || p.Y >= Main.maxTilesY) continue;
@@ -65,58 +112,10 @@ namespace VeinMinerArmorPlugin
             }
         }
 
-        // --- SECTION 2: ADAPTIVE COLOR SHIELDS ---
-        private void OnGameUpdate(EventArgs args)
-        {
-            foreach (TSPlayer player in TShock.Players)
-            {
-                if (player == null || !player.Active || player.Dead) continue;
-
-                int def = player.TPlayer.statDefense;
-                if (def <= 0) continue;
-
-                // --- FITUR UTAMA: MENGAMBIL WARNA VISUAL PLAYER ---
-                // Ini akan mengambil warna dominan dari zirah/baju yang dipakai
-                Color adaptiveColor = player.TPlayer.getArmorPenetrationModifier(0) > 0 ? Color.White : player.TPlayer.shirtColor;
-                
-                // Jika player pakai armor set, kita ambil warna dari efek skin/baju agar lebih akurat
-                if (player.TPlayer.body > 0)
-                {
-                    adaptiveColor = player.TPlayer.GetImmuneAlphaColor(Color.White);
-                }
-
-                int diskCount = Math.Min(5, (def / 10) + 1);
-                float speed = (float)Main.gameTime.TotalGameTime.TotalSeconds * 5f;
-
-                for (int i = 0; i < diskCount; i++)
-                {
-                    float angle = speed + (i * MathHelper.TwoPi / diskCount);
-                    Vector2 offset = new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle)) * 65f;
-                    Vector2 diskPos = player.TPlayer.Center + offset;
-
-                    // Menggunakan Dust 267 (Dust yang mendukung warna kustom secara akurat)
-                    int d = Dust.NewDust(diskPos, 2, 2, 267, 0, 0, 100, adaptiveColor, 1.3f);
-                    Main.dust[d].noGravity = true;
-                    Main.dust[d].velocity *= 0.1f;
-
-                    foreach (NPC npc in Main.npc)
-                    {
-                        if (npc != null && npc.active && !npc.friendly && Vector2.Distance(diskPos, npc.Center) < 40f)
-                        {
-                            int dmg = 25 + (int)(def * 1.5f);
-                            npc.StrikeNPC(dmg, 12f, (npc.Center.X < player.X ? -1 : 1)); 
-                            NetMessage.SendData((int)PacketTypes.NpcStrike, -1, -1, null, npc.whoAmI, dmg, 12f);
-                        }
-                    }
-                }
-            }
-        }
-
         protected override void Dispose(bool disposing)
         {
             if (disposing)
             {
-                ServerApi.Hooks.PlayerUpdate.Deregister(this, OnPlayerUpdate);
                 ServerApi.Hooks.GameUpdate.Deregister(this, OnGameUpdate);
             }
             base.Dispose(disposing);
