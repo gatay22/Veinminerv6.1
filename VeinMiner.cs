@@ -6,14 +6,13 @@ using System;
 
 namespace RareLootNotifier
 {
-    // Fix: Explicitly use 2, 1 as integers
     [ApiVersion(2, 1)]
     public class LootNotifier : TerrariaPlugin
     {
         public override string Name => "Rare Loot & Fishing Notifier";
         public override string Author => "Gemini AI";
         public override string Description => "Broadcasts a message when a player finds rare loot.";
-        public override Version Version => new Version(1, 0, 3);
+        public override Version Version => new Version(1, 0, 4);
 
         public LootNotifier(Main game) : base(game) { }
 
@@ -27,18 +26,22 @@ namespace RareLootNotifier
             if (args.MsgId == PacketTypes.ItemOwner)
             {
                 int itemIndex = args.number;
-                
-                // Fix: Cast WorldItem to Item explicitly or access properties safely
+
                 if (itemIndex >= 0 && itemIndex < Main.item.Length)
                 {
-                    // In v6.1, we cast to (Item) to access standard properties
-                    Item item = (Item)Main.item[itemIndex];
+                    // Ambil WorldItem dari array server
+                    var worldItem = Main.item[itemIndex];
 
-                    if (item != null && !string.IsNullOrEmpty(item.Name))
+                    // Karena kita tidak bisa cast ke Item, kita buat instance baru 
+                    // berdasarkan ID item tersebut untuk mengecek rarity-nya
+                    Item tempItem = new Item();
+                    tempItem.SetDefaults(worldItem.type);
+
+                    if (tempItem != null && !string.IsNullOrEmpty(tempItem.Name))
                     {
-                        if (item.rare >= 4 || (item.fishingPole > 0 && item.rare >= 3) || item.questItem)
+                        // Check rarity: 4+ is rare, or special fishing items
+                        if (tempItem.rare >= 4 || (tempItem.fishingPole > 0 && tempItem.rare >= 3) || tempItem.questItem)
                         {
-                            // In this packet, ignoreClient usually represents the player gaining the item
                             int playerIndex = args.ignoreClient;
                             
                             if (playerIndex >= 0 && playerIndex < TShock.Players.Length)
@@ -47,11 +50,12 @@ namespace RareLootNotifier
 
                                 if (player != null && player.Active)
                                 {
-                                    string broadCastMsg = $"[c/00FFFF:RARE FIND!] [c/E1E1E1:{player.Name}] just found [i:{item.type}] [c/FFD700:{item.Name}]!";
+                                    // Menggunakan Tag [i:ID] untuk memunculkan gambar item di chat
+                                    string broadCastMsg = $"[c/00FFFF:RARE FIND!] [c/E1E1E1:{player.Name}] just found [i:{tempItem.type}] [c/FFD700:{tempItem.Name}]!";
                                     TShock.Utils.Broadcast(broadCastMsg, Color.Cyan);
 
                                     Console.ForegroundColor = ConsoleColor.Cyan;
-                                    Console.WriteLine($"[Loot] {player.Name} obtained {item.Name}");
+                                    Console.WriteLine($"[Loot] {player.Name} obtained {tempItem.Name}");
                                     Console.ResetColor();
                                 }
                             }
